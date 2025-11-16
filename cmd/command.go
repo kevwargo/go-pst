@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -37,9 +36,10 @@ func collectProcesses() ([]*process, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open(%s): %w", procDir, err)
 	}
+	defer d.Close()
 
 	byPid := make(map[int]*process)
-	selfPidStr := strconv.Itoa(os.Getpid())
+	selfPid := os.Getpid()
 
 	for {
 		entries, err := d.ReadDir(dirBatchSize)
@@ -48,15 +48,15 @@ func collectProcesses() ([]*process, error) {
 		}
 
 		for _, e := range entries {
-			if !regexPid.MatchString(e.Name()) {
+			pid, err := strconv.Atoi(e.Name())
+			if err != nil {
 				continue
 			}
 
-			if e.Name() == selfPidStr {
+			if pid == selfPid {
 				continue
 			}
 
-			pid, _ := strconv.Atoi(e.Name())
 			p, err := makeProcess(pid)
 			if err != nil {
 				return nil, err
@@ -157,5 +157,3 @@ const (
 	procDir      = "/proc"
 	dirBatchSize = 100
 )
-
-var regexPid = regexp.MustCompile("^[0-9]+$")
