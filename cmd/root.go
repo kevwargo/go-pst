@@ -19,7 +19,7 @@ type config struct {
 }
 
 func rootCmd() *cobra.Command {
-	var cfg config
+	cfg := new(config)
 
 	cmd := &cobra.Command{
 		Use:           "pst [flags] PATTERN",
@@ -31,15 +31,15 @@ func rootCmd() *cobra.Command {
 		},
 	}
 
-	fs := cmd.Flags()
-	fs.BoolVarP(&cfg.fullMatch, "full-match", "f", false, "")
-	fs.BoolVarP(&cfg.executableMatch, "executable-match", "X", false, "")
-	fs.BoolVarP(&cfg.showThreads, "show-threads", "T", false, "")
-	fs.BoolVarP(&cfg.showWorkdir, "show-workdir", "w", false, "")
-	fs.BoolVarP(&cfg.showUID, "show-uid", "u", false, "")
-	fs.BoolVarP(&cfg.showGID, "show-gid", "g", false, "")
-	fs.BoolVarP(&cfg.showBasicFDs, "show-basic-fds", "F", false, "")
-	fs.BoolVarP(&cfg.showProcessGroups, "show-process-groups", "G", false, "")
+	f := cmd.Flags()
+	f.BoolVarP(&cfg.fullMatch, "full-match", "f", false, "")
+	f.BoolVarP(&cfg.executableMatch, "executable-match", "X", false, "")
+	f.BoolVarP(&cfg.showThreads, "show-threads", "T", false, "")
+	f.BoolVarP(&cfg.showWorkdir, "show-workdir", "w", false, "")
+	f.BoolVarP(&cfg.showUID, "show-uid", "u", false, "")
+	f.BoolVarP(&cfg.showGID, "show-gid", "g", false, "")
+	f.BoolVarP(&cfg.showBasicFDs, "show-basic-fds", "F", false, "")
+	f.BoolVarP(&cfg.showProcessGroups, "show-process-groups", "G", false, "")
 
 	return cmd
 }
