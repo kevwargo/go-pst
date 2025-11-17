@@ -3,11 +3,11 @@ package main
 import (
 	"log"
 
-	"github.com/kevwargo/go-pst/cmd"
+	"github.com/kevwargo/go-pst/cmd/pst"
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
+	if err := pst.Execute(); err != nil {
 		log.Fatal(err)
 	}
 }
