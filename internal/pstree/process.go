@@ -225,12 +225,26 @@ func readAttrs(path string) (map[string]string, error) {
 }
 
 func (p *process) format(cfg *Config) string {
-	pstr := fmt.Sprintf("[%d]%s%s %s", p.id, p.formatGUIDs(cfg), p.formatWorkdir(cfg), p.formatCmdline())
+	pstr := fmt.Sprintf("[%s]%s%s %s",
+		p.formatPid(cfg),
+		p.formatGUIDs(cfg),
+		p.formatWorkdir(cfg),
+		p.formatCmdline(),
+	)
+
 	if cfg.Truncate > 0 && len(pstr) > cfg.Truncate {
 		pstr = pstr[:cfg.Truncate]
 	}
 
 	return pstr
+}
+
+func (p *process) formatPid(cfg *Config) string {
+	if cfg.ShowNamespacePID {
+		return strings.Replace(p.attrs["NSpid"], "\t", " ", -1)
+	}
+
+	return strconv.Itoa(p.id)
 }
 
 func (p *process) formatGUIDs(cfg *Config) string {

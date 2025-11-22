@@ -18,6 +18,7 @@ type Config struct {
 	ShowGID           bool
 	ShowBasicFDs      bool
 	ShowProcessGroups bool
+	ShowNamespacePID  bool
 	Truncate          int
 	Trace             bool
 }

@@ -28,6 +28,7 @@ func Execute() error {
 	f.BoolVarP(&cfg.ShowGID, "show-gid", "g", false, "")
 	f.BoolVarP(&cfg.ShowBasicFDs, "show-basic-fds", "F", false, "")
 	f.BoolVarP(&cfg.ShowProcessGroups, "show-process-groups", "G", false, "")
+	f.BoolVarP(&cfg.ShowNamespacePID, "show-namespace-pid", "N", false, "")
 	f.IntVarP(&cfg.Truncate, "truncate", "t", 0, "Truncate lines longer than the passed value")
 
 	f.BoolVar(&cfg.Trace, "enable-trace", false, "Print some debug and tracing information to stderr")
