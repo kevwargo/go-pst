@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,7 +41,7 @@ func collectProcesses(cfg *Config) ([]*process, error) {
 	byPid := make(map[int]*process)
 	selfPid := os.Getpid()
 
-	err = readPidDir(procDir, func(pid int) error {
+	err = iterPIDs(procDir, func(pid int) error {
 		if pid == selfPid {
 			return nil
 		}
@@ -79,7 +80,7 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 		return nil, err
 	}
 
-	attrs, err := readAttrs(fmt.Sprintf("%s/%d/status", procDir, pid))
+	attrs, err := readAttrs(pidPath(pid, "status"))
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 	}
 
 	if cfg.ShowWorkdir {
-		p.workdir, err = os.Readlink(fmt.Sprintf("%s/%d/cwd", procDir, pid))
+		p.workdir, err = os.Readlink(pidPath(pid, "cwd"))
 		if err != nil {
 			p.workdir = fmt.Sprintf("!%s", err.Error())
 		}
@@ -128,15 +129,15 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 func readThreads(pid int, cfg *Config) ([]thread, error) {
 	var (
 		threads []thread
-		taskDir = fmt.Sprintf("%s/%d/task", procDir, pid)
+		taskDir = pidPath(pid, "task")
 	)
 
-	err := readPidDir(taskDir, func(tid int) error {
+	err := iterPIDs(taskDir, func(tid int) error {
 		if !cfg.ShowMainThread && tid == pid {
 			return nil
 		}
 
-		attrs, err := readAttrs(fmt.Sprintf("%s/%d/status", taskDir, tid))
+		attrs, err := readAttrs(pidPathCustom(taskDir, tid, "status"))
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		} else if err != nil {
@@ -154,10 +155,19 @@ func readThreads(pid int, cfg *Config) ([]thread, error) {
 	return threads, err
 }
 
-func readPidDir(dir string, fn func(int) error) error {
-	d, err := os.Open(dir)
+func pidPath(pid int, parts ...string) string {
+	return pidPathCustom(procDir, pid, parts...)
+}
+
+func pidPathCustom(baseDir string, pid int, parts ...string) string {
+	parts = append([]string{baseDir, strconv.Itoa(pid)}, parts...)
+	return filepath.Join(parts...)
+}
+
+func iterPIDs(path string, fn func(int) error) error {
+	d, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open(%s): %w", dir, err)
+		return fmt.Errorf("open(%s): %w", path, err)
 	}
 
 	for {
@@ -184,7 +194,7 @@ func readPidDir(dir string, fn func(int) error) error {
 }
 
 func readCmdline(pid int) ([]string, error) {
-	cmdlineRaw, err := os.ReadFile(fmt.Sprintf("%s/%d/cmdline", procDir, pid))
+	cmdlineRaw, err := os.ReadFile(pidPath(pid, "cmdline"))
 	if err != nil {
 		return nil, err
 	}
