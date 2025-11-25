@@ -32,47 +32,6 @@ type thread struct {
 	name string
 }
 
-func collectProcesses(cfg *Config) ([]*process, error) {
-	d, err := os.Open(procDir)
-	if err != nil {
-		return nil, fmt.Errorf("open(%s): %w", procDir, err)
-	}
-	defer d.Close()
-
-	byPid := make(map[int]*process)
-	selfPid := os.Getpid()
-
-	err = iterIntDirEntries(procDir, func(pid int) error {
-		if pid == selfPid {
-			return nil
-		}
-
-		p, err := readProcess(pid, cfg)
-		if err == nil {
-			byPid[pid] = p
-		} else if errors.Is(err, os.ErrNotExist) {
-			err = nil
-		}
-
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var processes []*process
-
-	for _, p := range byPid {
-		if p.parentID < 1 {
-			processes = append(processes, p)
-		} else if parent := byPid[p.parentID]; parent != nil {
-			parent.children = append(parent.children, p)
-		}
-	}
-
-	return processes, nil
-}
-
 func readProcess(pid int, cfg *Config) (*process, error) {
 	cmdline, err := readCmdline(pid)
 	if err != nil {

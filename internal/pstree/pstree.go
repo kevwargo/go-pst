@@ -2,10 +2,13 @@ package pstree
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -26,23 +29,55 @@ type Config struct {
 	Truncate          int
 	Trace             bool
 	InspectAllFDs     bool
+	DumpProcessImage  string
 }
 
 type Tree struct {
-	processes []*process
-	cfg       *Config
+	pList []*process
+	pMap  map[int]*process
+	cfg   *Config
 }
 
 func Build(cfg *Config) (*Tree, error) {
-	processes, err := collectProcesses(cfg)
+	d, err := os.Open(procDir)
+	if err != nil {
+		return nil, fmt.Errorf("open(%s): %w", procDir, err)
+	}
+	defer d.Close()
+
+	tree := &Tree{
+		cfg:  cfg,
+		pMap: make(map[int]*process),
+	}
+	selfPid := os.Getpid()
+
+	err = iterIntDirEntries(procDir, func(pid int) error {
+		if pid == selfPid {
+			return nil
+		}
+
+		p, err := readProcess(pid, cfg)
+		if err == nil {
+			tree.pMap[pid] = p
+		} else if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
+
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &Tree{
-		processes: processes,
-		cfg:       cfg,
-	}, nil
+	for _, p := range tree.pMap {
+		if p.parentID < 1 {
+			tree.pList = append(tree.pList, p)
+		} else if parent := tree.pMap[p.parentID]; parent != nil {
+			parent.children = append(parent.children, p)
+		}
+	}
+
+	return tree, nil
 }
 
 func (t *Tree) Print(pattern string) {
@@ -80,7 +115,7 @@ func (t *Tree) Print(pattern string) {
 		}
 	}
 
-	for _, p := range t.processes {
+	for _, p := range t.pList {
 		t.printProcess(p, state)
 	}
 
@@ -103,7 +138,7 @@ func (t *Tree) InspectFDs() {
 		}
 	}
 
-	visitProc(t.processes)
+	visitProc(t.pList)
 
 	specialRe := regexp.MustCompile("^[a-zA-Z0-9_-]+:")
 	fdLinks := slices.Collect(maps.Keys(fdLinkMap))
@@ -131,6 +166,73 @@ func (t *Tree) InspectFDs() {
 	}
 
 	tw.Flush()
+}
+
+func (t *Tree) DumpPID(pattern string) error {
+	if t.cfg.DumpProcessImage == "" {
+		return nil
+	}
+
+	pid, err := strconv.Atoi(pattern)
+	if err != nil {
+		return fmt.Errorf("%q is not a valid PID: %w", pattern, err)
+	}
+
+	p := t.pMap[pid]
+	if p == nil {
+		return fmt.Errorf("process with PID %d does not exist", pid)
+	}
+
+	return dump(t.cfg.DumpProcessImage, p)
+}
+
+func dump(dir string, p *process) error {
+	err := filepath.WalkDir(pidPath(p.id), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(dir, strings.TrimPrefix(path, procDir+"/"))
+
+		switch {
+		case d.IsDir():
+			if err := os.MkdirAll(destPath, 0o755); err != nil {
+				return fmt.Errorf("creating %s: %w", destPath, err)
+			}
+		case d.Type().IsRegular():
+			if d.Name() == "pagemap" {
+				return nil
+			}
+
+			data, err := os.ReadFile(path)
+			if err == nil {
+				if err := os.WriteFile(destPath, data, 0o644); err != nil {
+					return fmt.Errorf("writing file %s: %w", destPath, err)
+				}
+			}
+		case d.Type()&fs.ModeSymlink != 0:
+			linkVal, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("readlink %s: %w", path, err)
+			}
+			if err := os.Symlink(linkVal, destPath); err != nil && !errors.Is(err, fs.ErrExist) {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, c := range p.children {
+		if err := dump(pidPathCustom(dir, p.id), c); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 type matchState struct {
