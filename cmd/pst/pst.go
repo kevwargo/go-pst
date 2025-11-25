@@ -32,6 +32,7 @@ func Execute() error {
 	f.IntVarP(&cfg.Truncate, "truncate", "t", 0, "Truncate lines longer than the passed value")
 
 	f.BoolVar(&cfg.Trace, "enable-trace", false, "Print some debug and tracing information to stderr")
+	f.BoolVar(&cfg.InspectAllFDs, "inspect-all-fds", false, "Dump info about all open file descriptors across all processes")
 
 	return cmd.Execute()
 }
@@ -42,7 +43,11 @@ func execute(cfg *pstree.Config, pattern string) error {
 		return err
 	}
 
-	tree.Print(pattern)
+	if cfg.InspectAllFDs {
+		tree.InspectFDs()
+	} else {
+		tree.Print(pattern)
+	}
 
 	return nil
 }

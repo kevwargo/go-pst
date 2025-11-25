@@ -21,6 +21,7 @@ type process struct {
 	args     []string
 	workdir  string
 	threads  []thread
+	fds      map[int]string
 	children []*process
 
 	attrs map[string]string
@@ -41,7 +42,7 @@ func collectProcesses(cfg *Config) ([]*process, error) {
 	byPid := make(map[int]*process)
 	selfPid := os.Getpid()
 
-	err = iterPIDs(procDir, func(pid int) error {
+	err = iterIntDirEntries(procDir, func(pid int) error {
 		if pid == selfPid {
 			return nil
 		}
@@ -64,10 +65,8 @@ func collectProcesses(cfg *Config) ([]*process, error) {
 	for _, p := range byPid {
 		if p.parentID < 1 {
 			processes = append(processes, p)
-		} else {
-			if parent := byPid[p.parentID]; parent != nil {
-				parent.children = append(parent.children, p)
-			}
+		} else if parent := byPid[p.parentID]; parent != nil {
+			parent.children = append(parent.children, p)
 		}
 	}
 
@@ -101,6 +100,7 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 		id:       pid,
 		parentID: ppid,
 		name:     name,
+		fds:      make(map[int]string),
 
 		attrs: attrs,
 	}
@@ -123,6 +123,21 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 		}
 	}
 
+	if cfg.InspectAllFDs {
+		if err := iterIntDirEntries(pidPath(pid, "fd"), func(fd int) error {
+			link, err := os.Readlink(pidPath(pid, "fd", strconv.Itoa(fd)))
+			if err != nil {
+				link = fmt.Sprintf("error:[%s]", err.Error())
+			}
+
+			p.fds[fd] = link
+
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	return &p, nil
 }
 
@@ -132,7 +147,7 @@ func readThreads(pid int, cfg *Config) ([]thread, error) {
 		taskDir = pidPath(pid, "task")
 	)
 
-	err := iterPIDs(taskDir, func(tid int) error {
+	err := iterIntDirEntries(taskDir, func(tid int) error {
 		if !cfg.ShowMainThread && tid == pid {
 			return nil
 		}
@@ -164,7 +179,7 @@ func pidPathCustom(baseDir string, pid int, parts ...string) string {
 	return filepath.Join(parts...)
 }
 
-func iterPIDs(path string, fn func(int) error) error {
+func iterIntDirEntries(path string, fn func(int) error) error {
 	d, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open(%s): %w", path, err)
@@ -181,12 +196,12 @@ func iterPIDs(path string, fn func(int) error) error {
 		}
 
 		for _, e := range entries {
-			pid, err := strconv.Atoi(e.Name())
+			val, err := strconv.Atoi(e.Name())
 			if err != nil {
 				continue
 			}
 
-			if err = fn(pid); err != nil {
+			if err = fn(val); err != nil {
 				return err
 			}
 		}

@@ -1,12 +1,16 @@
 package pstree
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 )
 
 type Config struct {
@@ -21,6 +25,7 @@ type Config struct {
 	ShowNamespacePID  bool
 	Truncate          int
 	Trace             bool
+	InspectAllFDs     bool
 }
 
 type Tree struct {
@@ -82,6 +87,50 @@ func (t *Tree) Print(pattern string) {
 	if t.cfg.Trace {
 		fmt.Fprintf(state.trace.log, "Match cache hits: %d\n", state.trace.cacheHits)
 	}
+}
+
+func (t *Tree) InspectFDs() {
+	fdLinkMap := make(map[string]int)
+
+	var visitProc func([]*process)
+	visitProc = func(ps []*process) {
+		for _, p := range ps {
+			for _, link := range p.fds {
+				fdLinkMap[link]++
+			}
+
+			visitProc(p.children)
+		}
+	}
+
+	visitProc(t.processes)
+
+	specialRe := regexp.MustCompile("^[a-zA-Z0-9_-]+:")
+	fdLinks := slices.Collect(maps.Keys(fdLinkMap))
+	slices.SortFunc(fdLinks, func(fd1, fd2 string) int {
+		special1 := specialRe.MatchString(fd1)
+		special2 := specialRe.MatchString(fd2)
+
+		if special1 && !special2 {
+			return -1
+		}
+		if special2 && !special1 {
+			return 1
+		}
+
+		if diff := fdLinkMap[fd1] - fdLinkMap[fd2]; diff != 0 {
+			return diff
+		} else {
+			return cmp.Compare(fd1, fd2)
+		}
+	})
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	for _, fdLink := range fdLinks {
+		fmt.Fprintf(tw, "%s\t%d\n", fdLink, fdLinkMap[fdLink])
+	}
+
+	tw.Flush()
 }
 
 type matchState struct {
