@@ -39,19 +39,13 @@ type Tree struct {
 }
 
 func Build(cfg *Config) (*Tree, error) {
-	d, err := os.Open(procDir)
-	if err != nil {
-		return nil, fmt.Errorf("open(%s): %w", procDir, err)
-	}
-	defer d.Close()
-
 	tree := &Tree{
 		cfg:  cfg,
 		pMap: make(map[int]*process),
 	}
 	selfPid := os.Getpid()
 
-	err = iterIntDirEntries(procDir, func(pid int) error {
+	err := iterIntDirEntries(procDir, func(pid int) error {
 		if pid == selfPid {
 			return nil
 		}

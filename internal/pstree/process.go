@@ -143,6 +143,7 @@ func iterIntDirEntries(path string, fn func(int) error) error {
 	if err != nil {
 		return fmt.Errorf("open(%s): %w", path, err)
 	}
+	defer d.Close()
 
 	for {
 		entries, err := d.ReadDir(dirBatchSize)
