@@ -33,6 +33,7 @@ func Execute() error {
 
 	f.BoolVar(&cfg.Trace, "enable-trace", false, "Print some debug and tracing information to stderr")
 	f.BoolVar(&cfg.InspectAllFDs, "inspect-all-fds", false, "Dump info about all open file descriptors across all processes")
+	f.BoolVarP(&cfg.Interactive, "interactive", "i", false, "Run interactive TUI")
 
 	f.StringVar(&cfg.DumpProcessImage, "dump-process-image", "", "Store the current state of the process specified by PATTERN (must be exact pid) and all its ancestors in a directory")
 
@@ -45,13 +46,5 @@ func execute(cfg *pstree.Config, pattern string) error {
 		return err
 	}
 
-	if cfg.InspectAllFDs {
-		tree.InspectFDs()
-	} else if cfg.DumpProcessImage != "" {
-		err = tree.DumpPID(pattern)
-	} else {
-		tree.Print(pattern)
-	}
-
-	return err
+	return tree.Run(pattern)
 }

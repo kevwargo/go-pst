@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/kevwargo/go-pst/internal/procwatch"
 )
 
 type Config struct {
@@ -29,6 +31,7 @@ type Config struct {
 	Truncate          int
 	Trace             bool
 	InspectAllFDs     bool
+	Interactive       bool
 	DumpProcessImage  string
 }
 
@@ -74,7 +77,39 @@ func Build(cfg *Config) (*Tree, error) {
 	return tree, nil
 }
 
-func (t *Tree) Print(pattern string) {
+func (t *Tree) Run(pattern string) error {
+	if t.cfg.DumpProcessImage != "" {
+		return t.dumpPID(pattern)
+	}
+
+	if t.cfg.InspectAllFDs {
+		t.inspectFDs()
+	} else {
+		t.printMatching(pattern)
+
+		if t.cfg.Interactive {
+			return t.runInteractive()
+		}
+	}
+
+	return nil
+}
+
+func (t *Tree) runInteractive() error {
+	watcher, err := procwatch.Watch()
+	if err != nil {
+		return err
+	}
+
+	event, err := watcher.Recv()
+	for ; event != nil; event, err = watcher.Recv() {
+		fmt.Printf("%+v\n", *event)
+	}
+
+	return err
+}
+
+func (t *Tree) printMatching(pattern string) {
 	state := matchState{
 		level:             0,
 		forceMatch:        false,
@@ -118,7 +153,7 @@ func (t *Tree) Print(pattern string) {
 	}
 }
 
-func (t *Tree) InspectFDs() {
+func (t *Tree) inspectFDs() {
 	fdLinkMap := make(map[string]int)
 
 	var visitProc func([]*process)
@@ -162,7 +197,7 @@ func (t *Tree) InspectFDs() {
 	tw.Flush()
 }
 
-func (t *Tree) DumpPID(pattern string) error {
+func (t *Tree) dumpPID(pattern string) error {
 	if t.cfg.DumpProcessImage == "" {
 		return nil
 	}
