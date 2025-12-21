@@ -229,10 +229,6 @@ func (t *Tree) inspectFDs() {
 }
 
 func (t *Tree) dumpPID(pattern string) error {
-	if t.cfg.DumpProcessImage == "" {
-		return nil
-	}
-
 	pid, err := strconv.Atoi(pattern)
 	if err != nil {
 		return fmt.Errorf("%q is not a valid PID: %w", pattern, err)

@@ -101,17 +101,14 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 }
 
 func readThreads(pid int, cfg *Config) ([]thread, error) {
-	var (
-		threads []thread
-		taskDir = pidPath(pid, "task")
-	)
+	var threads []thread
 
-	err := iterIntDirEntries(taskDir, func(tid int) error {
+	err := iterIntDirEntries(pidPath(pid, "task"), func(tid int) error {
 		if !cfg.ShowMainThread && tid == pid {
 			return nil
 		}
 
-		attrs, err := readAttrs(pidPathCustom(taskDir, tid, "status"))
+		attrs, err := readAttrs(pidPath(tid, "status"))
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		} else if err != nil {
