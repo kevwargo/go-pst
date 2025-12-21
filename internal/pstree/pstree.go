@@ -34,9 +34,9 @@ type Config struct {
 }
 
 type Tree struct {
-	pList []*process
-	pMap  map[int]*process
-	cfg   *Config
+	topLevel []*process
+	pMap     map[int]*process
+	cfg      *Config
 }
 
 func Build(cfg *Config) (*Tree, error) {
@@ -66,7 +66,7 @@ func Build(cfg *Config) (*Tree, error) {
 
 	for _, p := range tree.pMap {
 		if p.parentID < 1 {
-			tree.pList = append(tree.pList, p)
+			tree.topLevel = append(tree.topLevel, p)
 		} else if parent := tree.pMap[p.parentID]; parent != nil {
 			parent.children = append(parent.children, p)
 		}
@@ -160,7 +160,7 @@ func (t *Tree) printMatching(pattern string) {
 		}
 	}
 
-	for _, p := range t.pList {
+	for _, p := range t.topLevel {
 		t.printProcess(p, state)
 	}
 }
@@ -179,7 +179,7 @@ func (t *Tree) inspectFDs() {
 		}
 	}
 
-	visitProc(t.pList)
+	visitProc(t.topLevel)
 
 	specialRe := regexp.MustCompile("^[a-zA-Z0-9_-]+:")
 	fdLinks := slices.Collect(maps.Keys(fdLinkMap))

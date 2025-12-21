@@ -223,7 +223,7 @@ func (p *process) format(cfg *Config) string {
 
 func (p *process) formatPid(cfg *Config) string {
 	if cfg.ShowNamespacePID {
-		return strings.Replace(p.attrs["NSpid"], "\t", " ", -1)
+		return strings.ReplaceAll(p.attrs["NSpid"], "\t", " ")
 	}
 
 	return strconv.Itoa(p.id)
