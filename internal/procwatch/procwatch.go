@@ -65,4 +65,5 @@ func (w *watcher) Recv() (*Event, error) {
 }
 
 func (w *watcher) Close() {
+	unix.Close(w.sock)
 }
