@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -13,8 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
-
-	"github.com/kevwargo/go-pst/internal/procwatch"
 )
 
 type Config struct {
@@ -81,91 +80,89 @@ func (t *Tree) Run(pattern string) error {
 	}
 
 	if t.cfg.InspectAllFDs {
-		t.inspectFDs()
-	} else {
-		t.printMatching(pattern)
-
-		if t.cfg.Interactive {
-			return t.runInteractive()
-		}
+		return t.inspectFDs()
 	}
+
+	t.filter(pattern)
+
+	if t.cfg.Interactive {
+		return runTUI(t)
+	}
+
+	t.dump(os.Stdout)
 
 	return nil
 }
 
-func (t *Tree) runInteractive() error {
-	watcher, err := procwatch.Watch()
-	if err != nil {
-		return err
-	}
-
-	for {
-		event, err := watcher.Recv()
-		if err != nil || event == nil {
-			return err
-		}
-
-		switch ev := event.(type) {
-		case procwatch.EventFork:
-			parent := strconv.Itoa(ev.ParentPID)
-			if ev.ParentTID != ev.ParentPID {
-				parent += fmt.Sprintf("(%d)", ev.ParentTID)
-			}
-			proc := strconv.Itoa(ev.PID)
-			if ev.TID != ev.PID {
-				proc += fmt.Sprintf("(%d)", ev.TID)
-			}
-
-			fmt.Printf("fork %s -> %s\n", parent, proc)
-		case procwatch.EventExec:
-			proc := strconv.Itoa(ev.PID)
-			if ev.TID != ev.PID {
-				proc += fmt.Sprintf("(%d)", ev.TID)
-			}
-			fmt.Printf("exec %s\n", proc)
-		case procwatch.EventExit:
-			parent := strconv.Itoa(ev.ParentPID)
-			if ev.ParentTID != ev.ParentPID {
-				parent += fmt.Sprintf("(%d)", ev.ParentTID)
-			}
-			proc := strconv.Itoa(ev.PID)
-			if ev.TID != ev.PID {
-				proc += fmt.Sprintf("(%d)", ev.TID)
-			}
-
-			fmt.Printf("exit %s, code:%d, signal:%d, parent:%s\n", proc, ev.ExitCode, ev.ExitSignal, parent)
-		}
-	}
-}
-
-func (t *Tree) printMatching(pattern string) {
-	state := matchState{
-		level:             0,
-		forceMatch:        false,
-		matchedDirectly:   make(map[int]bool),
-		matchedByChildren: make(map[int]bool),
-	}
-
+func (t *Tree) filter(pattern string) {
+	var matchFn func(*process) bool
 	if t.cfg.FullMatch {
-		state.matchFn = func(p *process) bool {
+		matchFn = func(p *process) bool {
 			return strings.Contains(p.formatCmdline(), pattern)
 		}
 	} else {
-		state.matchFn = func(p *process) bool {
-			args := append([]string{strconv.Itoa(p.id), p.name}, p.args...)
+		pid, err := strconv.Atoi(pattern)
+		if err != nil {
+			pid = -1
+		}
 
-			return slices.ContainsFunc(args, func(a string) bool {
+		matchFn = func(p *process) bool {
+			if p.id == pid {
+				return true
+			}
+
+			return slices.ContainsFunc(append([]string{p.name}, p.args...), func(a string) bool {
 				return strings.Contains(a, pattern)
 			})
 		}
 	}
 
+	t.topLevel = slices.DeleteFunc(t.topLevel, func(p *process) bool {
+		return !t.filterProcess(p, matchFn)
+	})
+}
+
+func (t *Tree) filterProcess(p *process, match func(*process) bool) bool {
+	if match(p) {
+		return true
+	}
+
+	p.children = slices.DeleteFunc(p.children, func(c *process) bool {
+		return !t.filterProcess(c, match)
+	})
+
+	if len(p.children) > 0 {
+		return true
+	}
+
+	delete(t.pMap, p.id)
+
+	return false
+}
+
+func (t *Tree) dump(w io.Writer) {
 	for _, p := range t.topLevel {
-		t.printProcess(p, state)
+		t.dumpProcess(p, w, 0)
 	}
 }
 
-func (t *Tree) inspectFDs() {
+func (t *Tree) dumpProcess(p *process, w io.Writer, level int) {
+	indent := strings.Repeat("  ", level)
+
+	fmt.Fprintf(w, "%s%s\n", indent, p.format(t.cfg))
+
+	if t.cfg.ShowThreads {
+		for _, t := range p.threads {
+			fmt.Fprintf(w, " %s%s\n", indent, t.format())
+		}
+	}
+
+	for _, c := range p.children {
+		t.dumpProcess(c, w, level+1)
+	}
+}
+
+func (t *Tree) inspectFDs() error {
 	fdLinkMap := make(map[string]int)
 
 	var visitProc func([]*process)
@@ -206,7 +203,7 @@ func (t *Tree) inspectFDs() {
 		fmt.Fprintf(tw, "%s\t%d\n", fdLink, fdLinkMap[fdLink])
 	}
 
-	tw.Flush()
+	return tw.Flush()
 }
 
 func (t *Tree) dumpPID(pattern string) error {
@@ -271,64 +268,3 @@ func dump(dir string, p *process) error {
 
 	return nil
 }
-
-type matchState struct {
-	level             int
-	forceMatch        bool
-	matchFn           func(*process) bool
-	matchedDirectly   map[int]bool
-	matchedByChildren map[int]bool
-}
-
-func (t *Tree) printProcess(p *process, state matchState) {
-	state.forceMatch = state.matchDirectly(p) || state.forceMatch
-
-	if !state.matchByChildren(p) && !state.forceMatch {
-		return
-	}
-
-	fmt.Printf("%s%s\n", strings.Repeat(indent, state.level), p.format(t.cfg))
-
-	if t.cfg.ShowThreads {
-		for _, t := range p.threads {
-			fmt.Printf(" %s%s\n", strings.Repeat(indent, state.level), t.format())
-		}
-	}
-
-	state.level++
-
-	for _, c := range p.children {
-		t.printProcess(c, state)
-	}
-}
-
-func (s *matchState) matchDirectly(p *process) bool {
-	matched, ok := s.matchedDirectly[p.id]
-	if !ok {
-		matched = s.matchFn(p)
-		s.matchedDirectly[p.id] = matched
-	}
-
-	return matched
-}
-
-func (s *matchState) matchByChildren(p *process) bool {
-	matched, ok := s.matchedByChildren[p.id]
-	if ok {
-		return matched
-	}
-
-	for _, c := range p.children {
-		if matched = s.matchDirectly(c) || s.matchByChildren(c); matched {
-			break
-		}
-	}
-
-	s.matchedByChildren[p.id] = matched
-
-	return matched
-}
-
-const (
-	indent = "  "
-)
