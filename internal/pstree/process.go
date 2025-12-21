@@ -38,7 +38,7 @@ func readProcess(pid int, cfg *Config) (*process, error) {
 		return nil, err
 	}
 
-	attrs, err := readAttrs(pidPath(pid, "status"))
+	attrs, err := readAttrs(pid)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func readThreads(pid int, cfg *Config) ([]thread, error) {
 			return nil
 		}
 
-		attrs, err := readAttrs(pidPath(tid, "status"))
+		attrs, err := readAttrs(tid)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		} else if err != nil {
@@ -180,11 +180,12 @@ func readCmdline(pid int) ([]string, error) {
 	return cmdline, nil
 }
 
-func readAttrs(path string) (map[string]string, error) {
-	f, err := os.Open(path)
+func readAttrs(pid int) (map[string]string, error) {
+	f, err := os.Open(pidPath(pid, "status"))
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 
 	attrs := make(map[string]string)
 
@@ -246,10 +247,6 @@ func (p *process) formatWorkdir(cfg *Config) string {
 }
 
 func (p *process) formatCmdline() string {
-	if len(p.args) == 0 {
-		return p.name
-	}
-
 	args := append([]string{p.name}, p.args...)
 
 	if !slices.ContainsFunc(args, func(a string) bool {
@@ -263,7 +260,7 @@ func (p *process) formatCmdline() string {
 	return string(jsonArgs)
 }
 
-func (t thread) format() string {
+func (t *thread) format() string {
 	return fmt.Sprintf("{%d} %s", t.id, t.name)
 }
 
