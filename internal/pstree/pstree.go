@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -29,7 +28,6 @@ type Config struct {
 	ShowProcessGroups bool
 	ShowNamespacePID  bool
 	Truncate          int
-	Trace             bool
 	InspectAllFDs     bool
 	Interactive       bool
 	DumpProcessImage  string
@@ -162,25 +160,8 @@ func (t *Tree) printMatching(pattern string) {
 		}
 	}
 
-	if t.cfg.Trace {
-		state.trace = new(trace)
-
-		f, err := os.OpenFile("go-pst.trace.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if err != nil {
-			state.trace.log = os.Stderr
-		} else {
-			state.trace.log = f
-
-			defer f.Close()
-		}
-	}
-
 	for _, p := range t.pList {
 		t.printProcess(p, state)
-	}
-
-	if t.cfg.Trace {
-		fmt.Fprintf(state.trace.log, "Match cache hits: %d\n", state.trace.cacheHits)
 	}
 }
 
@@ -297,18 +278,12 @@ type matchState struct {
 	matchFn           func(*process) bool
 	matchedDirectly   map[int]bool
 	matchedByChildren map[int]bool
-	trace             *trace
-}
-
-type trace struct {
-	cacheHits int
-	log       io.Writer
 }
 
 func (t *Tree) printProcess(p *process, state matchState) {
-	state.forceMatch = matchDirectly(p, &state) || state.forceMatch
+	state.forceMatch = state.matchDirectly(p) || state.forceMatch
 
-	if !matchByChildren(p, &state) && !state.forceMatch {
+	if !state.matchByChildren(p) && !state.forceMatch {
 		return
 	}
 
@@ -327,44 +302,29 @@ func (t *Tree) printProcess(p *process, state matchState) {
 	}
 }
 
-func matchDirectly(p *process, state *matchState) bool {
-	matched, ok := state.matchedDirectly[p.id]
+func (s *matchState) matchDirectly(p *process) bool {
+	matched, ok := s.matchedDirectly[p.id]
 	if !ok {
-		matched = state.matchFn(p)
-		state.matchedDirectly[p.id] = matched
-	}
-
-	if state.trace != nil {
-		if ok {
-			state.trace.cacheHits++
-		} else {
-			fmt.Fprintf(state.trace.log, "(%v) dir: [%d] %s\n", matched, p.id, p.formatCmdline())
-		}
+		matched = s.matchFn(p)
+		s.matchedDirectly[p.id] = matched
 	}
 
 	return matched
 }
 
-func matchByChildren(p *process, state *matchState) bool {
-	matched, ok := state.matchedByChildren[p.id]
+func (s *matchState) matchByChildren(p *process) bool {
+	matched, ok := s.matchedByChildren[p.id]
 	if ok {
-		if state.trace != nil {
-			state.trace.cacheHits++
-		}
 		return matched
 	}
 
 	for _, c := range p.children {
-		if matched = matchDirectly(c, state) || matchByChildren(c, state); matched {
+		if matched = s.matchDirectly(c) || s.matchByChildren(c); matched {
 			break
 		}
 	}
 
-	state.matchedByChildren[p.id] = matched
-
-	if state.trace != nil {
-		fmt.Fprintf(state.trace.log, "(%v) child: [%d] %s\n", matched, p.id, p.formatCmdline())
-	}
+	s.matchedByChildren[p.id] = matched
 
 	return matched
 }

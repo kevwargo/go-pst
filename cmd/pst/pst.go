@@ -31,7 +31,6 @@ func Execute() error {
 	f.BoolVarP(&cfg.ShowNamespacePID, "show-namespace-pid", "N", false, "")
 	f.IntVarP(&cfg.Truncate, "truncate", "t", 0, "Truncate lines longer than the passed value")
 
-	f.BoolVar(&cfg.Trace, "enable-trace", false, "Print some debug and tracing information to stderr")
 	f.BoolVar(&cfg.InspectAllFDs, "inspect-all-fds", false, "Dump info about all open file descriptors across all processes")
 	f.BoolVarP(&cfg.Interactive, "interactive", "i", false, "Run interactive TUI")
 
