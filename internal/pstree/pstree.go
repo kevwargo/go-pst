@@ -101,12 +101,43 @@ func (t *Tree) runInteractive() error {
 		return err
 	}
 
-	event, err := watcher.Recv()
-	for ; event != nil; event, err = watcher.Recv() {
-		fmt.Printf("%+v\n", *event)
-	}
+	for {
+		event, err := watcher.Recv()
+		if err != nil || event == nil {
+			return err
+		}
 
-	return err
+		switch ev := event.(type) {
+		case procwatch.EventFork:
+			parent := strconv.Itoa(ev.ParentPID)
+			if ev.ParentTID != ev.ParentPID {
+				parent += fmt.Sprintf("(%d)", ev.ParentTID)
+			}
+			proc := strconv.Itoa(ev.PID)
+			if ev.TID != ev.PID {
+				proc += fmt.Sprintf("(%d)", ev.TID)
+			}
+
+			fmt.Printf("fork %s -> %s\n", parent, proc)
+		case procwatch.EventExec:
+			proc := strconv.Itoa(ev.PID)
+			if ev.TID != ev.PID {
+				proc += fmt.Sprintf("(%d)", ev.TID)
+			}
+			fmt.Printf("exec %s\n", proc)
+		case procwatch.EventExit:
+			parent := strconv.Itoa(ev.ParentPID)
+			if ev.ParentTID != ev.ParentPID {
+				parent += fmt.Sprintf("(%d)", ev.ParentTID)
+			}
+			proc := strconv.Itoa(ev.PID)
+			if ev.TID != ev.PID {
+				proc += fmt.Sprintf("(%d)", ev.TID)
+			}
+
+			fmt.Printf("exit %s, code:%d, signal:%d, parent:%s\n", proc, ev.ExitCode, ev.ExitSignal, parent)
+		}
+	}
 }
 
 func (t *Tree) printMatching(pattern string) {

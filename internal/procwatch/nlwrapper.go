@@ -109,8 +109,7 @@ func (w *watcher) listen() error {
 			switch procEvent.what {
 			case C.PROC_EVENT_FORK:
 				data := (*C.struct_fork_proc_event)(unsafe.Pointer(&procEvent.event_data))
-				msg.ev = Event{
-					Type:      TypeFork,
+				msg.ev = EventFork{
 					PID:       int(data.child_tgid),
 					TID:       int(data.child_pid),
 					ParentPID: int(data.parent_tgid),
@@ -118,24 +117,22 @@ func (w *watcher) listen() error {
 				}
 			case C.PROC_EVENT_EXEC:
 				data := (*C.struct_exec_proc_event)(unsafe.Pointer(&procEvent.event_data))
-				msg.ev = Event{
-					Type: TypeExec,
-					PID:  int(data.process_tgid),
-					TID:  int(data.process_pid),
+				msg.ev = EventExec{
+					PID: int(data.process_tgid),
+					TID: int(data.process_pid),
 				}
 			case C.PROC_EVENT_EXIT:
 				data := (*C.struct_exit_proc_event)(unsafe.Pointer(&procEvent.event_data))
-				msg.ev = Event{
-					Type:       TypeExit,
+				msg.ev = EventExit{
 					PID:        int(data.process_tgid),
 					TID:        int(data.process_pid),
 					ParentPID:  int(data.parent_tgid),
 					ParentTID:  int(data.parent_pid),
 					ExitCode:   uint32(data.exit_code),
-					ExitSignal: uint32(data.exit_signal),
+					ExitSignal: int32(data.exit_signal),
 				}
 			default:
-				msg.ev = Event{Type: EventType(fmt.Sprintf("0x%x", procEvent.what))}
+				continue
 			}
 
 			w.ch <- msg

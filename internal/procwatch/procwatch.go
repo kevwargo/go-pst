@@ -1,25 +1,32 @@
 package procwatch
 
-type Event struct {
-	Type       EventType
+import (
+	"golang.org/x/sys/unix"
+)
+
+type EventFork struct {
+	PID       int
+	TID       int
+	ParentPID int
+	ParentTID int
+}
+
+type EventExec struct {
+	PID int
+	TID int
+}
+
+type EventExit struct {
 	PID        int
 	TID        int
 	ParentPID  int
 	ParentTID  int
 	ExitCode   uint32
-	ExitSignal uint32
+	ExitSignal int32
 }
 
-type EventType string
-
-const (
-	TypeFork EventType = "fork"
-	TypeExec EventType = "exec"
-	TypeExit EventType = "exit"
-)
-
 type Watcher interface {
-	Recv() (*Event, error)
+	Recv() (any, error)
 	Close()
 }
 
@@ -51,17 +58,17 @@ type watcher struct {
 }
 
 type watcherMessage struct {
-	ev  Event
+	ev  any
 	err error
 }
 
-func (w *watcher) Recv() (*Event, error) {
+func (w *watcher) Recv() (any, error) {
 	msg, ok := <-w.ch
 	if !ok {
 		return nil, nil
 	}
 
-	return &msg.ev, msg.err
+	return msg.ev, msg.err
 }
 
 func (w *watcher) Close() {
