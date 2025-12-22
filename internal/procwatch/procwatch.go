@@ -4,11 +4,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type EventFork struct {
+type EventForkProc struct {
 	PID       int
-	TID       int
 	ParentPID int
-	ParentTID int
+}
+
+type EventForkThread struct {
+	PID int
+	TID int
 }
 
 type EventExec struct {
@@ -16,13 +19,16 @@ type EventExec struct {
 	TID int
 }
 
-type EventExit struct {
+type EventExitProc struct {
 	PID        int
-	TID        int
 	ParentPID  int
-	ParentTID  int
-	ExitCode   uint32
+	ExitCode   int32
 	ExitSignal int32
+}
+
+type EventExitThread struct {
+	PID int
+	TID int
 }
 
 type Watcher interface {

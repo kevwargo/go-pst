@@ -70,7 +70,11 @@ func (w *watcher) initListen() error {
 		Groups: C.CN_IDX_PROC,
 	}
 
-	return unix.Sendto(w.sock, buf.Bytes(), 0, destAddr)
+	if err := unix.Sendto(w.sock, buf.Bytes(), 0, destAddr); err != nil {
+		return fmt.Errorf("sending initializing nlmsg: %w", err)
+	}
+
+	return nil
 }
 
 func (w *watcher) listen() error {
@@ -79,7 +83,7 @@ func (w *watcher) listen() error {
 	for {
 		n, from, err := unix.Recvfrom(w.sock, buf, 0)
 		if err != nil {
-			return err
+			return fmt.Errorf("receiving from nl socket: %w", err)
 		}
 
 		nlFrom, ok := from.(*unix.SockaddrNetlink)
@@ -92,51 +96,132 @@ func (w *watcher) listen() error {
 
 		nlmessages, err := syscall.ParseNetlinkMessage(buf[:n])
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing netlink message: %w", err)
 		}
 
 		for _, nlmsg := range nlmessages {
-			if nlmsg.Header.Type != unix.NLMSG_DONE {
-				continue
-			}
-
-			cnhdr := (*C.struct_cn_msg)(unsafe.Pointer(&nlmsg.Data[0]))
-			procEvent := (*C.struct_proc_event)(
-				unsafe.Pointer(uintptr(unsafe.Pointer(cnhdr)) + unsafe.Sizeof(*cnhdr)),
-			)
-			var msg watcherMessage
-
-			switch procEvent.what {
-			case C.PROC_EVENT_FORK:
-				data := (*C.struct_fork_proc_event)(unsafe.Pointer(&procEvent.event_data))
-				msg.ev = EventFork{
-					PID:       int(data.child_tgid),
-					TID:       int(data.child_pid),
-					ParentPID: int(data.parent_tgid),
-					ParentTID: int(data.parent_pid),
-				}
-			case C.PROC_EVENT_EXEC:
-				data := (*C.struct_exec_proc_event)(unsafe.Pointer(&procEvent.event_data))
-				msg.ev = EventExec{
-					PID: int(data.process_tgid),
-					TID: int(data.process_pid),
-				}
-			case C.PROC_EVENT_EXIT:
-				data := (*C.struct_exit_proc_event)(unsafe.Pointer(&procEvent.event_data))
-				msg.ev = EventExit{
-					PID:        int(data.process_tgid),
-					TID:        int(data.process_pid),
-					ParentPID:  int(data.parent_tgid),
-					ParentTID:  int(data.parent_pid),
-					ExitCode:   uint32(data.exit_code),
-					ExitSignal: int32(data.exit_signal),
-				}
+			switch t := nlmsgType(nlmsg.Header.Type); t {
+			case nlmsgNoop:
+			case nlmsgDone:
+				w.deliverMessage(unsafe.Pointer(&nlmsg.Data[0]))
 			default:
-				continue
+				return fmt.Errorf("nlmsghdr %s: 0x%x", t, nlmsg.Data)
 			}
-
-			w.ch <- msg
 		}
+	}
+}
+
+func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {
+	cnhdr := (*C.struct_cn_msg)(nlmsgDataPtr)
+	procEvent := (*C.struct_proc_event)(
+		unsafe.Pointer(uintptr(unsafe.Pointer(cnhdr)) + unsafe.Sizeof(*cnhdr)),
+	)
+	evType := procEventType(procEvent.what)
+	dataPtr := unsafe.Pointer(&procEvent.event_data)
+
+	switch evType {
+	case procEventFork:
+		data := (*C.struct_fork_proc_event)(dataPtr)
+		if data.child_pid == data.child_tgid {
+			w.ch <- watcherMessage{ev: EventForkProc{
+				PID:       int(data.child_tgid),
+				ParentPID: int(data.parent_tgid),
+			}}
+		} else {
+			w.ch <- watcherMessage{ev: EventForkThread{
+				PID: int(data.child_tgid),
+				TID: int(data.child_pid),
+			}}
+		}
+	case procEventExec:
+		data := (*C.struct_exec_proc_event)(dataPtr)
+		w.ch <- watcherMessage{ev: EventExec{
+			PID: int(data.process_tgid),
+			TID: int(data.process_pid),
+		}}
+	case procEventExit:
+		data := (*C.struct_exit_proc_event)(dataPtr)
+		if data.parent_pid == 0 && data.parent_tgid == 0 {
+			w.ch <- watcherMessage{ev: EventExitThread{
+				PID: int(data.process_tgid),
+				TID: int(data.process_pid),
+			}}
+		} else {
+			w.ch <- watcherMessage{ev: EventExitProc{
+				PID:       int(data.process_tgid),
+				ParentPID: int(data.parent_tgid),
+
+				// TODO: properly parse exit_code, using WIFEXITED, etc.
+				ExitCode:   int32(data.exit_code),
+				ExitSignal: int32(data.exit_signal),
+			}}
+		}
+	}
+}
+
+type nlmsgType uint16
+
+const (
+	nlmsgNoop    nlmsgType = unix.NLMSG_NOOP
+	nlmsgDone    nlmsgType = unix.NLMSG_DONE
+	nlmsgError   nlmsgType = unix.NLMSG_ERROR
+	nlmsgOverrun nlmsgType = unix.NLMSG_OVERRUN
+)
+
+func (t nlmsgType) String() string {
+	switch t {
+	case nlmsgNoop:
+		return "noop"
+	case nlmsgDone:
+		return "done"
+	case nlmsgError:
+		return "error"
+	case nlmsgOverrun:
+		return "overrun"
+	default:
+		return fmt.Sprintf("0x%08x", uint16(t))
+	}
+}
+
+type procEventType uint32
+
+const (
+	procEventNone     procEventType = C.PROC_EVENT_NONE
+	procEventFork     procEventType = C.PROC_EVENT_FORK
+	procEventExec     procEventType = C.PROC_EVENT_EXEC
+	procEventUid      procEventType = C.PROC_EVENT_UID
+	procEventGid      procEventType = C.PROC_EVENT_GID
+	procEventSid      procEventType = C.PROC_EVENT_SID
+	procEventPtrace   procEventType = C.PROC_EVENT_PTRACE
+	procEventComm     procEventType = C.PROC_EVENT_COMM
+	procEventCoredump procEventType = C.PROC_EVENT_COREDUMP
+	procEventExit     procEventType = C.PROC_EVENT_EXIT
+)
+
+func (t procEventType) String() string {
+	switch t {
+	case procEventNone:
+		return "none"
+	case procEventFork:
+		return "fork"
+	case procEventExec:
+		return "exec"
+	case procEventUid:
+		return "uid"
+	case procEventGid:
+		return "gid"
+	case procEventSid:
+		return "sid"
+	case procEventPtrace:
+		return "ptrace"
+	case procEventComm:
+		return "comm"
+	case procEventCoredump:
+		return "coredump"
+	case procEventExit:
+		return "exit"
+	default:
+		return fmt.Sprintf("0x%08x", uint32(t))
 	}
 }
 

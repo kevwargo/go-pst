@@ -235,6 +235,7 @@ func (p *process) formatGUIDs(cfg *Config) string {
 		return ""
 	}
 
+	// TODO
 	return ""
 }
 
