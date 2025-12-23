@@ -134,6 +134,8 @@ func (p *process) loadFDs(cfg *Config) error {
 		return nil
 	}
 
+	p.fds = make(map[int]string)
+
 	return iterIntDirEntries(pidPath(p.id, "fd"), func(fd int) error {
 		link, err := os.Readlink(pidPath(p.id, "fd", strconv.Itoa(fd)))
 		if err != nil {
