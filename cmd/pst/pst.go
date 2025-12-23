@@ -24,8 +24,11 @@ func Execute() error {
 	f.BoolVarP(&cfg.ShowThreads, "show-threads", "T", false, "")
 	f.BoolVar(&cfg.ShowMainThread, "show-main-thread", false, "")
 	f.BoolVarP(&cfg.ShowWorkdir, "show-workdir", "w", false, "")
+
+	// TODO
 	f.BoolVarP(&cfg.ShowUID, "show-uid", "u", false, "")
 	f.BoolVarP(&cfg.ShowGID, "show-gid", "g", false, "")
+
 	f.BoolVarP(&cfg.ShowBasicFDs, "show-basic-fds", "F", false, "")
 	f.BoolVarP(&cfg.ShowProcessGroups, "show-process-groups", "G", false, "")
 	f.BoolVarP(&cfg.ShowNamespacePID, "show-namespace-pid", "N", false, "")

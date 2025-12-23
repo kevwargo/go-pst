@@ -17,14 +17,19 @@ import (
 type process struct {
 	id       int
 	parentID int
-	name     string
-	args     []string
-	workdir  string
-	threads  []thread
-	fds      map[int]string
+	attrs    procAttrs
 	children []*process
+	threads  []*thread
+	fds      map[int]string
+}
 
-	attrs map[string]string
+type procAttrs struct {
+	name    string
+	args    []string
+	workdir string
+	nsPid   []int
+
+	raw map[string]string
 }
 
 type thread struct {
@@ -32,90 +37,88 @@ type thread struct {
 	name string
 }
 
-func readProcess(pid int, cfg *Config) (*process, error) {
-	cmdline, err := readCmdline(pid)
-	if err != nil {
+func loadProcess(pid int, cfg *Config) (*process, error) {
+	p := process{id: pid}
+
+	if err := p.loadAttrs(cfg); err != nil {
 		return nil, err
 	}
 
-	attrs, err := readAttrs(pid)
-	if err != nil {
+	if err := p.loadThreads(cfg); err != nil {
 		return nil, err
 	}
 
-	var name string
-	if len(cmdline) > 0 {
-		name = cmdline[0]
-	} else if n, ok := attrs["Name"]; ok {
-		name = fmt.Sprintf("*%s*", n)
-	}
-
-	ppid, err := strconv.Atoi(attrs["PPid"])
-	if err != nil {
-		return nil, fmt.Errorf("invalid PPid for Pid %d: %w", pid, err)
-	}
-
-	p := process{
-		id:       pid,
-		parentID: ppid,
-		name:     name,
-		fds:      make(map[int]string),
-
-		attrs: attrs,
-	}
-
-	if len(cmdline) > 1 {
-		p.args = cmdline[1:]
-	}
-
-	if cfg.ShowWorkdir {
-		p.workdir, err = os.Readlink(pidPath(pid, "cwd"))
-		if err != nil {
-			p.workdir = fmt.Sprintf("!%s", err.Error())
-		}
-	}
-
-	if cfg.ShowThreads {
-		p.threads, err = readThreads(pid, cfg)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if cfg.InspectAllFDs {
-		if err := iterIntDirEntries(pidPath(pid, "fd"), func(fd int) error {
-			link, err := os.Readlink(pidPath(pid, "fd", strconv.Itoa(fd)))
-			if err != nil {
-				link = fmt.Sprintf("error:[%s]", err.Error())
-			}
-
-			p.fds[fd] = link
-
-			return nil
-		}); err != nil {
-			return nil, err
-		}
+	if err := p.loadFDs(cfg); err != nil {
+		return nil, err
 	}
 
 	return &p, nil
 }
 
-func readThreads(pid int, cfg *Config) ([]thread, error) {
-	var threads []thread
+func (p *process) loadAttrs(cfg *Config) error {
+	cmdline, err := readCmdline(p.id)
+	if err != nil {
+		return err
+	}
 
-	err := iterIntDirEntries(pidPath(pid, "task"), func(tid int) error {
-		if !cfg.ShowMainThread && tid == pid {
+	p.attrs.raw, err = readAttrsMap(p.id)
+	if err != nil {
+		return err
+	}
+
+	p.parentID, err = strconv.Atoi(p.attrs.raw["PPid"])
+	if err != nil {
+		return fmt.Errorf("invalid PPid %q for Pid %d: %w", p.id, err)
+	}
+
+	if len(cmdline) > 0 {
+		p.attrs.name = cmdline[0]
+		p.attrs.args = cmdline[1:]
+	} else if n, ok := p.attrs.raw["Name"]; ok {
+		p.attrs.name = fmt.Sprintf("*%s*", n)
+	}
+
+	if cfg.ShowWorkdir {
+		p.attrs.workdir, err = os.Readlink(pidPath(p.id, "cwd"))
+		if err != nil {
+			p.attrs.workdir = fmt.Sprintf("!%s", err.Error())
+		}
+	}
+
+	if cfg.ShowNamespacePID {
+		strPids := strings.Split(p.attrs.raw["NSpid"], "\t")
+		if len(strPids) > 1 {
+			p.attrs.nsPid = make([]int, len(strPids))
+			for i, sp := range strPids {
+				p.attrs.nsPid[i], err = strconv.Atoi(sp)
+				if err != nil {
+					return fmt.Errorf("invalid entry %q in %d/status/NSpid: %w", sp, p.id, err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *process) loadThreads(cfg *Config) error {
+	if !cfg.ShowThreads {
+		return nil
+	}
+
+	err := iterIntDirEntries(pidPath(p.id, "task"), func(tid int) error {
+		if !cfg.ShowMainThread && tid == p.id {
 			return nil
 		}
 
-		attrs, err := readAttrs(tid)
+		attrs, err := readAttrsMap(tid)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		} else if err != nil {
 			return err
 		}
 
-		threads = append(threads, thread{
+		p.threads = append(p.threads, &thread{
 			id:   tid,
 			name: attrs["Name"],
 		})
@@ -123,7 +126,76 @@ func readThreads(pid int, cfg *Config) ([]thread, error) {
 		return nil
 	})
 
-	return threads, err
+	return err
+}
+
+func (p *process) loadFDs(cfg *Config) error {
+	if !cfg.InspectAllFDs {
+		return nil
+	}
+
+	return iterIntDirEntries(pidPath(p.id, "fd"), func(fd int) error {
+		link, err := os.Readlink(pidPath(p.id, "fd", strconv.Itoa(fd)))
+		if err != nil {
+			link = fmt.Sprintf("error:[%s]", err.Error())
+		}
+
+		p.fds[fd] = link
+
+		return nil
+	})
+}
+
+func (p *process) format(cfg *Config) string {
+	pstr := fmt.Sprintf("%s%s %s",
+		p.formatPid(),
+		p.attrs.formatWorkdir(),
+		p.attrs.formatCmdline(),
+	)
+
+	if cfg.Truncate > 0 && len(pstr) > cfg.Truncate {
+		pstr = pstr[:cfg.Truncate]
+	}
+
+	return pstr
+}
+
+func (p *process) formatPid() string {
+	if p.attrs.nsPid == nil {
+		return fmt.Sprintf("[%d]", p.id)
+	}
+
+	return fmt.Sprint(p.attrs.nsPid)
+}
+
+func (a *procAttrs) formatWorkdir() string {
+	if a.workdir == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(" (%s)", a.workdir)
+}
+
+func (a *procAttrs) cmdline() []string {
+	return append([]string{a.name}, a.args...)
+}
+
+func (a *procAttrs) formatCmdline() string {
+	args := a.cmdline()
+
+	if !slices.ContainsFunc(args, func(a string) bool {
+		return a == "" || strings.ContainsAny(a, " \t")
+	}) {
+		return strings.Join(args, " ")
+	}
+
+	jsonArgs, _ := json.Marshal(args)
+
+	return string(jsonArgs)
+}
+
+func (t *thread) format() string {
+	return fmt.Sprintf("{%d} %s", t.id, t.name)
 }
 
 func pidPath(pid int, parts ...string) string {
@@ -180,7 +252,7 @@ func readCmdline(pid int) ([]string, error) {
 	return cmdline, nil
 }
 
-func readAttrs(pid int) (map[string]string, error) {
+func readAttrsMap(pid int) (map[string]string, error) {
 	f, err := os.Open(pidPath(pid, "status"))
 	if err != nil {
 		return nil, err
@@ -201,68 +273,10 @@ func readAttrs(pid int) (map[string]string, error) {
 			continue
 		}
 
-		attrs[parts[0]] = strings.TrimLeft(parts[1], " \t")
+		attrs[parts[0]] = strings.Trim(parts[1], " \t\n")
 	}
 
 	return attrs, nil
-}
-
-func (p *process) format(cfg *Config) string {
-	pstr := fmt.Sprintf("[%s]%s%s %s",
-		p.formatPid(cfg),
-		p.formatGUIDs(cfg),
-		p.formatWorkdir(cfg),
-		p.formatCmdline(),
-	)
-
-	if cfg.Truncate > 0 && len(pstr) > cfg.Truncate {
-		pstr = pstr[:cfg.Truncate]
-	}
-
-	return pstr
-}
-
-func (p *process) formatPid(cfg *Config) string {
-	if cfg.ShowNamespacePID {
-		return strings.ReplaceAll(p.attrs["NSpid"], "\t", " ")
-	}
-
-	return strconv.Itoa(p.id)
-}
-
-func (p *process) formatGUIDs(cfg *Config) string {
-	if !cfg.ShowUID && !cfg.ShowGID {
-		return ""
-	}
-
-	// TODO
-	return ""
-}
-
-func (p *process) formatWorkdir(cfg *Config) string {
-	if !cfg.ShowWorkdir {
-		return ""
-	}
-
-	return fmt.Sprintf(" (%s)", p.workdir)
-}
-
-func (p *process) formatCmdline() string {
-	args := append([]string{p.name}, p.args...)
-
-	if !slices.ContainsFunc(args, func(a string) bool {
-		return a == "" || strings.ContainsAny(a, " \t")
-	}) {
-		return strings.Join(args, " ")
-	}
-
-	jsonArgs, _ := json.Marshal(args)
-
-	return string(jsonArgs)
-}
-
-func (t *thread) format() string {
-	return fmt.Sprintf("{%d} %s", t.id, t.name)
 }
 
 const (

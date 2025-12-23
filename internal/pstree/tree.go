@@ -27,51 +27,57 @@ type Config struct {
 	ShowProcessGroups bool
 	ShowNamespacePID  bool
 	Truncate          int
-	InspectAllFDs     bool
 	Interactive       bool
+	InspectAllFDs     bool
 	DumpProcessImage  string
 }
 
 type Tree struct {
+	cfg      *Config
 	topLevel []*process
 	pMap     map[int]*process
-	cfg      *Config
 }
 
 func Build(cfg *Config) (*Tree, error) {
-	tree := &Tree{
-		cfg:  cfg,
-		pMap: make(map[int]*process),
-	}
-	selfPid := os.Getpid()
+	tree := Tree{cfg: cfg}
 
-	err := iterIntDirEntries(procDir, func(pid int) error {
+	if err := tree.loadProcesses(); err != nil {
+		return nil, err
+	}
+
+	tree.arrangeProcesses()
+
+	return &tree, nil
+}
+
+func (t *Tree) loadProcesses() error {
+	selfPid := os.Getpid()
+	t.pMap = make(map[int]*process)
+
+	return iterIntDirEntries(procDir, func(pid int) error {
 		if pid == selfPid {
 			return nil
 		}
 
-		p, err := readProcess(pid, cfg)
+		p, err := loadProcess(pid, t.cfg)
 		if err == nil {
-			tree.pMap[pid] = p
+			t.pMap[pid] = p
 		} else if errors.Is(err, os.ErrNotExist) {
 			err = nil
 		}
 
 		return err
 	})
-	if err != nil {
-		return nil, err
-	}
+}
 
-	for _, p := range tree.pMap {
+func (t *Tree) arrangeProcesses() {
+	for _, p := range t.pMap {
 		if p.parentID < 1 {
-			tree.topLevel = append(tree.topLevel, p)
-		} else if parent := tree.pMap[p.parentID]; parent != nil {
+			t.topLevel = append(t.topLevel, p)
+		} else if parent := t.pMap[p.parentID]; parent != nil {
 			parent.children = append(parent.children, p)
 		}
 	}
-
-	return tree, nil
 }
 
 func (t *Tree) Run(pattern string) error {
@@ -98,7 +104,7 @@ func (t *Tree) filter(pattern string) {
 	var matchFn func(*process) bool
 	if t.cfg.FullMatch {
 		matchFn = func(p *process) bool {
-			return strings.Contains(p.formatCmdline(), pattern)
+			return strings.Contains(p.attrs.formatCmdline(), pattern)
 		}
 	} else {
 		pid, err := strconv.Atoi(pattern)
@@ -111,7 +117,7 @@ func (t *Tree) filter(pattern string) {
 				return true
 			}
 
-			return slices.ContainsFunc(append([]string{p.name}, p.args...), func(a string) bool {
+			return slices.ContainsFunc(p.attrs.cmdline(), func(a string) bool {
 				return strings.Contains(a, pattern)
 			})
 		}
