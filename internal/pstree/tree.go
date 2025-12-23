@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -17,25 +15,26 @@ import (
 )
 
 type Config struct {
-	FullMatch         bool
-	ShowThreads       bool
-	ShowMainThread    bool
-	ShowWorkdir       bool
-	ShowUID           bool
-	ShowGID           bool
-	ShowBasicFDs      bool
-	ShowProcessGroups bool
-	ShowNamespacePID  bool
-	Truncate          int
-	Interactive       bool
-	InspectAllFDs     bool
-	DumpProcessImage  string
+	FullMatch           bool
+	ShowThreads         bool
+	ShowMainThread      bool
+	ShowWorkdir         bool
+	ShowUID             bool
+	ShowGID             bool
+	ShowBasicFDs        bool
+	ShowProcessGroups   bool
+	ShowNamespacePID    bool
+	Truncate            int
+	Interactive         bool
+	InspectAllFDs       bool
+	DumpProcessSnapshot string
 }
 
 type Tree struct {
 	cfg      *Config
 	topLevel []*process
 	pMap     map[int]*process
+	matchFn  func(*process, string) bool
 }
 
 func Build(cfg *Config) (*Tree, error) {
@@ -46,6 +45,7 @@ func Build(cfg *Config) (*Tree, error) {
 	}
 
 	tree.arrangeProcesses()
+	tree.initMatchFn()
 
 	return &tree, nil
 }
@@ -80,16 +80,34 @@ func (t *Tree) arrangeProcesses() {
 	}
 }
 
+func (t *Tree) initMatchFn() {
+	if t.cfg.FullMatch {
+		t.matchFn = func(p *process, pattern string) bool {
+			return strings.Contains(p.attrs.formatCmdline(), pattern)
+		}
+	} else {
+		t.matchFn = func(p *process, pattern string) bool {
+			if strconv.Itoa(p.id) == pattern {
+				return true
+			}
+
+			return slices.ContainsFunc(p.attrs.cmdlineArgs(), func(a string) bool {
+				return strings.Contains(a, pattern)
+			})
+		}
+	}
+}
+
 func (t *Tree) Run(pattern string) error {
-	if t.cfg.DumpProcessImage != "" {
-		return t.dumpPID(pattern)
+	if t.cfg.DumpProcessSnapshot != "" {
+		return t.dumpProcessSnapshot(pattern)
 	}
 
 	if t.cfg.InspectAllFDs {
 		return t.inspectFDs()
 	}
 
-	t.filter(pattern)
+	t.match(pattern)
 
 	if t.cfg.Interactive {
 		return runTUI(t)
@@ -100,50 +118,39 @@ func (t *Tree) Run(pattern string) error {
 	return nil
 }
 
-func (t *Tree) filter(pattern string) {
-	var matchFn func(*process) bool
-	if t.cfg.FullMatch {
-		matchFn = func(p *process) bool {
-			return strings.Contains(p.attrs.formatCmdline(), pattern)
-		}
-	} else {
-		pid, err := strconv.Atoi(pattern)
-		if err != nil {
-			pid = -1
-		}
-
-		matchFn = func(p *process) bool {
-			if p.id == pid {
-				return true
-			}
-
-			return slices.ContainsFunc(p.attrs.cmdline(), func(a string) bool {
-				return strings.Contains(a, pattern)
-			})
-		}
+func (t *Tree) match(pattern string) {
+	for _, p := range t.topLevel {
+		t.matchProcess(p, pattern)
 	}
-
-	t.topLevel = slices.DeleteFunc(t.topLevel, func(p *process) bool {
-		return !t.filterProcess(p, matchFn)
-	})
 }
 
-func (t *Tree) filterProcess(p *process, match func(*process) bool) bool {
-	if match(p) {
-		return true
+func (t *Tree) matchProcess(p *process, pattern string) {
+	if t.matchFn(p, pattern) {
+		p.match = matchDirect
+		t.matchDescendants(p, pattern)
+	} else {
+		p.match = matchNone
+
+		for _, c := range p.children {
+			t.matchProcess(c, pattern)
+
+			if c.match != matchNone {
+				p.match = matchAsAncestor
+			}
+		}
 	}
+}
 
-	p.children = slices.DeleteFunc(p.children, func(c *process) bool {
-		return !t.filterProcess(c, match)
-	})
+func (t *Tree) matchDescendants(p *process, pattern string) {
+	for _, c := range p.children {
+		if t.matchFn(c, pattern) {
+			c.match = matchDirect
+		} else {
+			c.match = matchAsDescendant
+		}
 
-	if len(p.children) > 0 {
-		return true
+		t.matchDescendants(c, pattern)
 	}
-
-	delete(t.pMap, p.id)
-
-	return false
 }
 
 func (t *Tree) dump(w io.Writer) {
@@ -153,6 +160,10 @@ func (t *Tree) dump(w io.Writer) {
 }
 
 func (t *Tree) dumpProcess(p *process, w io.Writer, level int) {
+	if p.match == matchNone {
+		return
+	}
+
 	indent := strings.Repeat("  ", level)
 
 	fmt.Fprintf(w, "%s%s\n", indent, p.format(t.cfg))
@@ -212,7 +223,7 @@ func (t *Tree) inspectFDs() error {
 	return tw.Flush()
 }
 
-func (t *Tree) dumpPID(pattern string) error {
+func (t *Tree) dumpProcessSnapshot(pattern string) error {
 	pid, err := strconv.Atoi(pattern)
 	if err != nil {
 		return fmt.Errorf("%q is not a valid PID: %w", pattern, err)
@@ -223,54 +234,5 @@ func (t *Tree) dumpPID(pattern string) error {
 		return fmt.Errorf("process with PID %d does not exist", pid)
 	}
 
-	return dump(t.cfg.DumpProcessImage, p)
-}
-
-func dump(dir string, p *process) error {
-	err := filepath.WalkDir(pidPath(p.id), func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		destPath := filepath.Join(dir, strings.TrimPrefix(path, procDir+"/"))
-
-		switch {
-		case d.IsDir():
-			if err := os.MkdirAll(destPath, 0o755); err != nil {
-				return fmt.Errorf("creating %s: %w", destPath, err)
-			}
-		case d.Type().IsRegular():
-			if d.Name() == "pagemap" {
-				return nil
-			}
-
-			data, err := os.ReadFile(path)
-			if err == nil {
-				if err := os.WriteFile(destPath, data, 0o644); err != nil {
-					return fmt.Errorf("writing file %s: %w", destPath, err)
-				}
-			}
-		case d.Type()&fs.ModeSymlink != 0:
-			linkVal, err := os.Readlink(path)
-			if err != nil {
-				return fmt.Errorf("readlink %s: %w", path, err)
-			}
-			if err := os.Symlink(linkVal, destPath); err != nil && !errors.Is(err, fs.ErrExist) {
-				return err
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, c := range p.children {
-		if err := dump(pidPathCustom(dir, p.id), c); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return p.dumpSnapshot(t.cfg.DumpProcessSnapshot)
 }

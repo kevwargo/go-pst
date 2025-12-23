@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,6 +22,7 @@ type process struct {
 	children []*process
 	threads  []*thread
 	fds      map[int]string
+	match    matchState
 }
 
 type procAttrs struct {
@@ -36,6 +38,15 @@ type thread struct {
 	id   int
 	name string
 }
+
+type matchState int
+
+const (
+	matchNone matchState = iota
+	matchAsAncestor
+	matchAsDescendant
+	matchDirect
+)
 
 func loadProcess(pid int, cfg *Config) (*process, error) {
 	p := process{id: pid}
@@ -170,6 +181,55 @@ func (p *process) formatPid() string {
 	return fmt.Sprint(p.attrs.nsPid)
 }
 
+func (p *process) dumpSnapshot(dir string) error {
+	err := filepath.WalkDir(pidPath(p.id), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(dir, strings.TrimPrefix(path, procDir+"/"))
+
+		switch {
+		case d.IsDir():
+			if err := os.MkdirAll(destPath, 0o755); err != nil {
+				return fmt.Errorf("creating %s: %w", destPath, err)
+			}
+		case d.Type().IsRegular():
+			if d.Name() == "pagemap" {
+				return nil
+			}
+
+			data, err := os.ReadFile(path)
+			if err == nil {
+				if err := os.WriteFile(destPath, data, 0o644); err != nil {
+					return fmt.Errorf("writing file %s: %w", destPath, err)
+				}
+			}
+		case d.Type()&fs.ModeSymlink != 0:
+			linkVal, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("readlink %s: %w", path, err)
+			}
+			if err := os.Symlink(linkVal, destPath); err != nil && !errors.Is(err, fs.ErrExist) {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, c := range p.children {
+		if err := c.dumpSnapshot(pidPathCustom(dir, p.id)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (a *procAttrs) formatWorkdir() string {
 	if a.workdir == "" {
 		return ""
@@ -178,12 +238,12 @@ func (a *procAttrs) formatWorkdir() string {
 	return fmt.Sprintf(" (%s)", a.workdir)
 }
 
-func (a *procAttrs) cmdline() []string {
+func (a *procAttrs) cmdlineArgs() []string {
 	return append([]string{a.name}, a.args...)
 }
 
 func (a *procAttrs) formatCmdline() string {
-	args := a.cmdline()
+	args := a.cmdlineArgs()
 
 	if !slices.ContainsFunc(args, func(a string) bool {
 		return a == "" || strings.ContainsAny(a, " \t")
