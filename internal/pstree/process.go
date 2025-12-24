@@ -23,13 +23,14 @@ type process struct {
 	threads  []*thread
 	fds      map[int]string
 	match    matchState
+	exit     *exitStatus
 }
 
 type procAttrs struct {
 	name    string
 	args    []string
 	workdir string
-	nsPid   []int
+	nsPid   []string
 
 	raw map[string]string
 }
@@ -37,6 +38,23 @@ type procAttrs struct {
 type thread struct {
 	id   int
 	name string
+}
+
+type exitStatus struct {
+	code   int
+	signal int
+}
+
+func (e *exitStatus) String() string {
+	if e == nil {
+		return ""
+	}
+
+	if e.signal != 0 {
+		return fmt.Sprintf("*s:%d*", e.signal)
+	}
+
+	return fmt.Sprintf("*e:%d*", e.code)
 }
 
 type matchState int
@@ -79,7 +97,7 @@ func (p *process) loadAttrs(cfg *Config) error {
 
 	p.parentID, err = strconv.Atoi(p.attrs.raw["PPid"])
 	if err != nil {
-		return fmt.Errorf("invalid PPid %q for Pid %d: %w", p.id, err)
+		return fmt.Errorf("invalid PPid %q for Pid %d: %w", p.attrs.raw["PPid"], p.id, err)
 	}
 
 	if len(cmdline) > 0 {
@@ -97,16 +115,7 @@ func (p *process) loadAttrs(cfg *Config) error {
 	}
 
 	if cfg.ShowNamespacePID {
-		strPids := strings.Split(p.attrs.raw["NSpid"], "\t")
-		if len(strPids) > 1 {
-			p.attrs.nsPid = make([]int, len(strPids))
-			for i, sp := range strPids {
-				p.attrs.nsPid[i], err = strconv.Atoi(sp)
-				if err != nil {
-					return fmt.Errorf("invalid entry %q in %d/status/NSpid: %w", sp, p.id, err)
-				}
-			}
-		}
+		p.attrs.nsPid = strings.Split(p.attrs.raw["NSpid"], "\t")
 	}
 
 	return nil
@@ -174,11 +183,19 @@ func (p *process) format(cfg *Config) string {
 }
 
 func (p *process) formatPid() string {
-	if p.attrs.nsPid == nil {
-		return fmt.Sprintf("[%d]", p.id)
+	var v []string
+
+	if p.attrs.nsPid != nil {
+		v = p.attrs.nsPid
+	} else {
+		v = []string{strconv.Itoa(p.id)}
 	}
 
-	return fmt.Sprint(p.attrs.nsPid)
+	if p.exit != nil {
+		v = append(v, p.exit.String())
+	}
+
+	return fmt.Sprint(v)
 }
 
 func (p *process) dumpSnapshot(dir string) error {
@@ -228,6 +245,17 @@ func (p *process) dumpSnapshot(dir string) error {
 	}
 
 	return nil
+}
+
+func (p process) fork(newPid int) *process {
+	p.parentID = p.id
+	p.id = newPid
+	p.children = nil
+	p.threads = nil
+	p.attrs.nsPid = nil
+	p.attrs.raw = nil
+
+	return &p
 }
 
 func (a *procAttrs) formatWorkdir() string {

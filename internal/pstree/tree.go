@@ -26,6 +26,7 @@ type Config struct {
 	ShowNamespacePID    bool
 	Truncate            int
 	Interactive         bool
+	ShowDead            bool
 	InspectAllFDs       bool
 	DumpProcessSnapshot string
 }
@@ -35,10 +36,14 @@ type Tree struct {
 	topLevel []*process
 	pMap     map[int]*process
 	matchFn  func(*process, string) bool
+	showDead bool
 }
 
 func Build(cfg *Config) (*Tree, error) {
-	tree := Tree{cfg: cfg}
+	tree := Tree{
+		cfg:      cfg,
+		showDead: cfg.ShowDead,
+	}
 
 	if err := tree.loadProcesses(); err != nil {
 		return nil, err
@@ -153,6 +158,73 @@ func (t *Tree) matchDescendants(p *process, pattern string) {
 	}
 }
 
+func (t *Tree) insertProcess(pid, ppid int) error {
+	if _, ok := t.pMap[pid]; ok {
+		return nil
+	}
+
+	parent := t.pMap[ppid]
+	if parent == nil {
+		return fmt.Errorf("parent %d of new process %d not found", ppid, pid)
+	}
+
+	p := parent.fork(pid)
+	parent.children = append(parent.children, p)
+	t.pMap[pid] = p
+
+	return nil
+}
+
+func (t *Tree) reloadProcess(pid int) error {
+	old := t.pMap[pid]
+	if old == nil {
+		return fmt.Errorf("process %d not found", pid)
+	}
+
+	new, err := loadProcess(pid, t.cfg)
+	if err != nil {
+		return err
+	}
+
+	parent := t.pMap[new.parentID]
+	if parent == nil {
+		return fmt.Errorf("parent %d of new process %d not found", new.parentID, pid)
+	}
+
+	switch parent.match {
+	case matchDirect, matchAsDescendant:
+		new.match = matchAsDescendant
+	}
+
+	*old = *new
+
+	return nil
+}
+
+func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) error {
+	p := t.pMap[pid]
+	if p == nil {
+		return fmt.Errorf("process %d not found", pid)
+	}
+
+	parent := t.pMap[ppid]
+	if parent == nil {
+		return fmt.Errorf("parent %d of new process %d not found", ppid, pid)
+	}
+
+	delete(t.pMap, pid)
+	p.exit = &exitStatus{
+		code:   exitCode,
+		signal: signal,
+	}
+
+	return nil
+}
+
+func (t *Tree) toggleShowDead() {
+	t.showDead = !t.showDead
+}
+
 func (t *Tree) dump(w io.Writer) {
 	for _, p := range t.topLevel {
 		t.dumpProcess(p, w, 0)
@@ -161,6 +233,10 @@ func (t *Tree) dump(w io.Writer) {
 
 func (t *Tree) dumpProcess(p *process, w io.Writer, level int) {
 	if p.match == matchNone {
+		return
+	}
+
+	if p.exit != nil && !t.showDead {
 		return
 	}
 

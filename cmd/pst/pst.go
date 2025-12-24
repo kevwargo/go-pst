@@ -36,6 +36,7 @@ func Execute() error {
 
 	f.BoolVar(&cfg.InspectAllFDs, "inspect-all-fds", false, "Dump info about all open file descriptors across all processes")
 	f.BoolVarP(&cfg.Interactive, "interactive", "i", false, "Run interactive TUI")
+	f.BoolVarP(&cfg.ShowDead, "show-dead", "D", false, "Don't hide exited processes (applies only in TUI)")
 
 	f.StringVar(&cfg.DumpProcessSnapshot, "dump-process-snapshot", "", "Store the current state of the process specified by PATTERN (must be exact pid) and all its ancestors in a directory")
 

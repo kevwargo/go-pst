@@ -33,9 +33,7 @@ func (t *tui) Init() tea.Cmd {
 func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if k := msg.String(); k == "q" || k == "ctrl+c" {
-			return t, t.quit
-		}
+		return t, t.handleKey(msg)
 	case procMsg:
 		return t, t.handleProcMsg(msg)
 	}
@@ -73,20 +71,29 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 		return tea.Sequence(tea.Printf("procwatcher error: %s", msg.err.Error()), t.quit)
 	}
 
-	var cmd tea.Cmd
-
 	switch ev := msg.event.(type) {
 	case procwatch.EventForkProc:
-		cmd = tea.Printf("fork %d -> %d", ev.ParentPID, ev.PID)
-	case procwatch.EventForkThread:
-		cmd = tea.Printf("thread %d -> %d", ev.PID, ev.TID)
+		t.tree.insertProcess(ev.PID, ev.ParentPID)
+	// case procwatch.EventForkThread:
+	// 	cmd = tea.Printf("thread %d -> %d", ev.PID, ev.TID)
 	case procwatch.EventExec:
-		cmd = tea.Printf("exec %d", ev.PID)
+		t.tree.reloadProcess(ev.PID)
 	case procwatch.EventExitProc:
-		cmd = tea.Printf("exit %d (code:%d parent:%d)", ev.PID, ev.ExitCode, ev.ParentPID)
-	case procwatch.EventExitThread:
-		cmd = tea.Printf("exit-thread %d (process:%d)", ev.TID, ev.PID)
+		t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
+		// case procwatch.EventExitThread:
+		// 	cmd = tea.Printf("exit-thread %d (process:%d)", ev.TID, ev.PID)
 	}
 
-	return tea.Batch(cmd, t.recvMsg)
+	return t.recvMsg
+}
+
+func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
+	switch k := msg.String(); k {
+	case "q", "ctrl+c":
+		return t.quit
+	case "d":
+		t.tree.toggleShowDead()
+	}
+
+	return t.recvMsg
 }

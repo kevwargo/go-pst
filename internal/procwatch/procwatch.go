@@ -22,8 +22,8 @@ type EventExec struct {
 type EventExitProc struct {
 	PID        int
 	ParentPID  int
-	ExitCode   int32
-	ExitSignal int32
+	ExitCode   int
+	ExitSignal int
 }
 
 type EventExitThread struct {

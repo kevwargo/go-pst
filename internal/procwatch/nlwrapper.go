@@ -152,8 +152,10 @@ func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {
 				ParentPID: int(data.parent_tgid),
 
 				// TODO: properly parse exit_code, using WIFEXITED, etc.
-				ExitCode:   int32(data.exit_code),
-				ExitSignal: int32(data.exit_signal),
+				// For now it just duplicates the logic from
+				// /usr/include/x86_64-linux-gnu/bits/waitstatus.h
+				ExitCode:   int((data.exit_code & 0xff00) >> 8),
+				ExitSignal: int(data.exit_code & 0x7f),
 			}}
 		}
 	}
