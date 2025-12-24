@@ -13,17 +13,26 @@ func runTUI(tree *Tree) error {
 		return err
 	}
 
-	_, err = tea.NewProgram(&tui{
-		tree:    tree,
-		watcher: watcher,
-	}).Run()
+	var opts []tea.ProgramOption
+	if tree.cfg.Fullscreen {
+		opts = append(opts, tea.WithAltScreen())
+	}
+
+	t := tui{
+		tree:       tree,
+		watcher:    watcher,
+		fullscreen: tree.cfg.Fullscreen,
+	}
+
+	_, err = tea.NewProgram(&t, opts...).Run()
 
 	return err
 }
 
 type tui struct {
-	tree    *Tree
-	watcher procwatch.Watcher
+	tree       *Tree
+	watcher    procwatch.Watcher
+	fullscreen bool
 }
 
 func (t *tui) Init() tea.Cmd {
@@ -31,14 +40,16 @@ func (t *tui) Init() tea.Cmd {
 }
 
 func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return t, t.handleKey(msg)
+		cmd = t.handleKey(msg)
 	case procMsg:
-		return t, t.handleProcMsg(msg)
+		cmd = t.handleProcMsg(msg)
 	}
 
-	return t, t.recvMsg
+	return t, tea.Sequence(cmd, t.recvMsg)
 }
 
 func (t *tui) View() string {
@@ -68,7 +79,11 @@ func (t *tui) recvMsg() tea.Msg {
 
 func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 	if msg.err != nil {
-		return tea.Sequence(tea.Printf("procwatcher error: %s", msg.err.Error()), t.quit)
+		return tea.Sequence(tea.Printf("procwatcher error: %s", msg.err.Error()), tea.Quit)
+	}
+
+	if msg.event == nil {
+		return tea.Sequence(tea.Println("procwatcher finished"), tea.Quit)
 	}
 
 	switch ev := msg.event.(type) {
@@ -84,16 +99,30 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 		// 	cmd = tea.Printf("exit-thread %d (process:%d)", ev.TID, ev.PID)
 	}
 
-	return t.recvMsg
+	return nil
 }
 
 func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
+	var cmd tea.Cmd
+
 	switch k := msg.String(); k {
 	case "q", "ctrl+c":
-		return t.quit
+		cmd = t.quit
 	case "d":
 		t.tree.toggleShowDead()
+	case "f":
+		cmd = t.toggleFullscreen()
 	}
 
-	return t.recvMsg
+	return cmd
+}
+
+func (t *tui) toggleFullscreen() tea.Cmd {
+	t.fullscreen = !t.fullscreen
+
+	if t.fullscreen {
+		return tea.EnterAltScreen
+	}
+
+	return tea.ExitAltScreen
 }

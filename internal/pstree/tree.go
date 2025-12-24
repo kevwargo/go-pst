@@ -15,20 +15,23 @@ import (
 )
 
 type Config struct {
-	FullMatch           bool
-	ShowThreads         bool
-	ShowMainThread      bool
-	ShowWorkdir         bool
-	ShowUID             bool
-	ShowGID             bool
-	ShowBasicFDs        bool
-	ShowProcessGroups   bool
-	ShowNamespacePID    bool
-	Truncate            int
-	Interactive         bool
-	ShowDead            bool
+	FullMatch         bool
+	ShowThreads       bool
+	ShowMainThread    bool
+	ShowWorkdir       bool
+	ShowUID           bool
+	ShowGID           bool
+	ShowBasicFDs      bool
+	ShowProcessGroups bool
+	ShowNamespacePID  bool
+	Truncate          int
+
 	InspectAllFDs       bool
 	DumpProcessSnapshot string
+
+	Interactive bool
+	ShowDead    bool
+	Fullscreen  bool
 }
 
 type Tree struct {
