@@ -4,4 +4,4 @@ build:
 
 .PHONY: install
 install:
-	install -s go-pst /usr/local/bin
+	install -s -m u=rwx,go=rx,a+s go-pst /usr/local/bin
