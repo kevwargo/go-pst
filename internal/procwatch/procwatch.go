@@ -47,11 +47,11 @@ func Watch() (Watcher, error) {
 	}
 
 	go func() {
-		defer w.Close()
+		defer unix.Close(w.sock)
 
 		err := w.listen()
 		if err != nil {
-			w.ch <- watcherMessage{err: err}
+			w.msgCh <- watcherMessage{err: err}
 		}
 	}()
 
@@ -59,8 +59,9 @@ func Watch() (Watcher, error) {
 }
 
 type watcher struct {
-	sock int
-	ch   chan watcherMessage
+	sock   int
+	msgCh  chan watcherMessage
+	doneCh chan struct{}
 }
 
 type watcherMessage struct {
@@ -69,14 +70,15 @@ type watcherMessage struct {
 }
 
 func (w *watcher) Recv() (any, error) {
-	msg, ok := <-w.ch
-	if !ok {
+	select {
+	case msg := <-w.msgCh:
+		return msg.ev, msg.err
+	case <-w.doneCh:
 		return nil, nil
 	}
-
-	return msg.ev, msg.err
 }
 
 func (w *watcher) Close() {
+	close(w.doneCh)
 	unix.Close(w.sock)
 }
