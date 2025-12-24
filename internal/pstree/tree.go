@@ -26,12 +26,12 @@ type Config struct {
 	ShowNamespacePID  bool
 	Truncate          int
 
-	InspectAllFDs       bool
-	DumpProcessSnapshot string
-
 	Interactive bool
 	ShowDead    bool
 	Fullscreen  bool
+
+	InspectAllFDs       bool
+	DumpProcessSnapshot string
 }
 
 type Tree struct {
@@ -121,9 +121,7 @@ func (t *Tree) Run(pattern string) error {
 		return runTUI(t)
 	}
 
-	t.dump(os.Stdout)
-
-	return nil
+	return t.renderStdout()
 }
 
 func (t *Tree) match(pattern string) {
@@ -228,7 +226,13 @@ func (t *Tree) toggleShowDead() {
 	t.showDead = !t.showDead
 }
 
-func (t *Tree) dump(w io.Writer) {
+func (t *Tree) renderStdout() error {
+	t.render(os.Stdout)
+
+	return nil
+}
+
+func (t *Tree) render(w io.Writer) {
 	for _, p := range t.topLevel {
 		t.dumpProcess(p, w, 0)
 	}

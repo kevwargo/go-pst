@@ -45,6 +45,8 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		cmd = t.handleKey(msg)
+	case tea.WindowSizeMsg:
+		t.handleWinSize(msg)
 	case procMsg:
 		cmd = t.handleProcMsg(msg)
 	}
@@ -54,7 +56,7 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (t *tui) View() string {
 	var buf strings.Builder
-	t.tree.dump(&buf)
+	t.tree.render(&buf)
 
 	return buf.String()
 }
@@ -115,6 +117,9 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	return cmd
+}
+
+func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
 }
 
 func (t *tui) toggleFullscreen() tea.Cmd {
