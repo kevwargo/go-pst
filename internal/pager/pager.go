@@ -74,6 +74,8 @@ func (p *Pager) String() string {
 }
 
 func (p *Pager) render() {
+	// TODO: make this optional to avoid unnecessary re-renders
+
 	p.buf.Reset()
 
 	lines := p.lines

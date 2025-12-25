@@ -95,6 +95,7 @@ func (t *Tree) initMatchFn() {
 	} else {
 		t.matchFn = func(p *process, pattern string) bool {
 			if strconv.Itoa(p.id) == pattern {
+				// TODO: standardize this behavior, maybe with a separate flag
 				return true
 			}
 
@@ -197,6 +198,8 @@ func (t *Tree) reloadProcess(pid int) (bool, error) {
 	if parent == nil {
 		return false, fmt.Errorf("parent %d of new process %d not found", new.parentID, pid)
 	}
+
+	// TODO: match new process and optionally re-match existing processes that are related
 
 	switch parent.match {
 	case matchDirect, matchAsDescendant:
