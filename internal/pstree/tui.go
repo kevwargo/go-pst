@@ -1,13 +1,16 @@
 package pstree
 
 import (
-	"strings"
+	"fmt"
+	"log"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kevwargo/go-pst/internal/pager"
 	"github.com/kevwargo/go-pst/internal/procwatch"
 )
 
-func runTUI(tree *Tree) error {
+func runTUI(tree *Tree, pg *pager.Pager) error {
 	watcher, err := procwatch.Watch()
 	if err != nil {
 		return err
@@ -20,9 +23,16 @@ func runTUI(tree *Tree) error {
 
 	t := tui{
 		tree:       tree,
+		pager:      pg,
 		watcher:    watcher,
 		fullscreen: tree.cfg.Fullscreen,
 	}
+
+	lf, err := t.openLog()
+	if err != nil {
+		return err
+	}
+	defer lf.Close()
 
 	_, err = tea.NewProgram(&t, opts...).Run()
 
@@ -31,8 +41,10 @@ func runTUI(tree *Tree) error {
 
 type tui struct {
 	tree       *Tree
+	pager      *pager.Pager
 	watcher    procwatch.Watcher
 	fullscreen bool
+	quitting   bool
 }
 
 func (t *tui) Init() tea.Cmd {
@@ -55,16 +67,11 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *tui) View() string {
-	var buf strings.Builder
-	t.tree.render(&buf)
+	if t.quitting {
+		return ""
+	}
 
-	return buf.String()
-}
-
-func (t *tui) quit() tea.Msg {
-	t.watcher.Close()
-
-	return tea.QuitMsg{}
+	return t.pager.String()
 }
 
 type procMsg struct {
@@ -80,25 +87,46 @@ func (t *tui) recvMsg() tea.Msg {
 }
 
 func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
-	if msg.err != nil {
-		return tea.Sequence(tea.Printf("procwatcher error: %s", msg.err.Error()), tea.Quit)
+	if msg.event == nil {
+		if t.quitting {
+			return nil
+		}
+
+		t.quitting = true
+		t.pager.SetMaxHeight(0)
+		cmd := tea.Println(t.pager.String())
+
+		if msg.err != nil {
+			cmd = tea.Sequence(cmd, tea.Printf("procwatcher error: %s", msg.err.Error()))
+		}
+
+		return tea.Sequence(cmd, tea.Quit)
 	}
 
-	if msg.event == nil {
-		return tea.Sequence(tea.Println("procwatcher finished"), tea.Quit)
-	}
+	var (
+		changed bool
+		err     error
+	)
 
 	switch ev := msg.event.(type) {
 	case procwatch.EventForkProc:
-		t.tree.insertProcess(ev.PID, ev.ParentPID)
+		changed, err = t.tree.insertProcess(ev.PID, ev.ParentPID)
 	// case procwatch.EventForkThread:
 	// 	cmd = tea.Printf("thread %d -> %d", ev.PID, ev.TID)
 	case procwatch.EventExec:
-		t.tree.reloadProcess(ev.PID)
+		changed, err = t.tree.reloadProcess(ev.PID)
 	case procwatch.EventExitProc:
-		t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
+		changed, err = t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
 		// case procwatch.EventExitThread:
 		// 	cmd = tea.Printf("exit-thread %d (process:%d)", ev.TID, ev.PID)
+	}
+
+	if err != nil {
+		return tea.Printf("handling %T: %v", msg.event, err)
+	}
+
+	if changed {
+		t.tree.render(t.pager)
 	}
 
 	return nil
@@ -109,17 +137,30 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	switch k := msg.String(); k {
 	case "q", "ctrl+c":
-		cmd = t.quit
+		cmd = t.closeWatcher
 	case "d":
 		t.tree.toggleShowDead()
+		t.tree.render(t.pager)
 	case "f":
 		cmd = t.toggleFullscreen()
+	case "up":
+		t.pager.Up()
+	case "down":
+		t.pager.Down()
 	}
 
 	return cmd
 }
 
+func (t *tui) closeWatcher() tea.Msg {
+	t.watcher.Close()
+
+	return struct{}{}
+}
+
 func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
+	t.pager.SetMaxWidth(msg.Width)
+	t.pager.SetMaxHeight(msg.Height)
 }
 
 func (t *tui) toggleFullscreen() tea.Cmd {
@@ -130,4 +171,15 @@ func (t *tui) toggleFullscreen() tea.Cmd {
 	}
 
 	return tea.ExitAltScreen
+}
+
+func (t *tui) openLog() (*os.File, error) {
+	lf, err := os.OpenFile("pst.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
+		return nil, fmt.Errorf("opening log file: %w", err)
+	}
+
+	log.SetOutput(lf)
+
+	return lf, nil
 }

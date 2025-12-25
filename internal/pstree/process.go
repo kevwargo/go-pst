@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/kevwargo/go-pst/internal/pager"
 )
 
 type process struct {
@@ -168,18 +170,21 @@ func (p *process) loadFDs(cfg *Config) error {
 	})
 }
 
-func (p *process) format(cfg *Config) string {
-	pstr := fmt.Sprintf("%s%s %s",
-		p.formatPid(),
-		p.attrs.formatWorkdir(),
-		p.attrs.formatCmdline(),
-	)
-
-	if cfg.Truncate > 0 && len(pstr) > cfg.Truncate {
-		pstr = pstr[:cfg.Truncate]
+func (p *process) render(cfg *Config, pg *pager.Pager, level int) {
+	if p.match == matchNone || (p.exit != nil && !cfg.ShowDead) {
+		return
 	}
 
-	return pstr
+	indent := strings.Repeat("  ", level)
+	pg.WriteLine(indent+p.formatPid(), fmt.Sprintf("%s %s", p.attrs.formatWorkdir(), p.attrs.formatCmdline()))
+
+	for _, t := range p.threads {
+		pg.WriteLine(fmt.Sprintf("%s {%d} ", indent, t.id), t.name)
+	}
+
+	for _, c := range p.children {
+		c.render(cfg, pg, level+1)
+	}
 }
 
 func (p *process) formatPid() string {

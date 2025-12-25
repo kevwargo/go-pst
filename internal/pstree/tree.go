@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"regexp"
@@ -12,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/charmbracelet/x/term"
+	"github.com/kevwargo/go-pst/internal/pager"
 )
 
 type Config struct {
@@ -25,6 +27,7 @@ type Config struct {
 	ShowProcessGroups bool
 	ShowNamespacePID  bool
 	Truncate          int
+	TruncateTerm      bool
 
 	Interactive bool
 	ShowDead    bool
@@ -39,14 +42,10 @@ type Tree struct {
 	topLevel []*process
 	pMap     map[int]*process
 	matchFn  func(*process, string) bool
-	showDead bool
 }
 
 func Build(cfg *Config) (*Tree, error) {
-	tree := Tree{
-		cfg:      cfg,
-		showDead: cfg.ShowDead,
-	}
+	tree := Tree{cfg: cfg}
 
 	if err := tree.loadProcesses(); err != nil {
 		return nil, err
@@ -117,11 +116,18 @@ func (t *Tree) Run(pattern string) error {
 
 	t.match(pattern)
 
+	pg, err := t.preparePager()
+	if err != nil {
+		return err
+	}
+	t.render(pg)
+
 	if t.cfg.Interactive {
-		return runTUI(t)
+		return runTUI(t, pg)
 	}
 
-	return t.renderStdout()
+	_, err = fmt.Println(pg.String())
+	return err
 }
 
 func (t *Tree) match(pattern string) {
@@ -159,37 +165,37 @@ func (t *Tree) matchDescendants(p *process, pattern string) {
 	}
 }
 
-func (t *Tree) insertProcess(pid, ppid int) error {
+func (t *Tree) insertProcess(pid, ppid int) (bool, error) {
 	if _, ok := t.pMap[pid]; ok {
-		return nil
+		return false, nil
 	}
 
 	parent := t.pMap[ppid]
 	if parent == nil {
-		return fmt.Errorf("parent %d of new process %d not found", ppid, pid)
+		return false, fmt.Errorf("parent %d of new process %d not found", ppid, pid)
 	}
 
 	p := parent.fork(pid)
 	parent.children = append(parent.children, p)
 	t.pMap[pid] = p
 
-	return nil
+	return parent.match == matchAsDescendant || parent.match == matchDirect, nil
 }
 
-func (t *Tree) reloadProcess(pid int) error {
+func (t *Tree) reloadProcess(pid int) (bool, error) {
 	old := t.pMap[pid]
 	if old == nil {
-		return fmt.Errorf("process %d not found", pid)
+		return false, fmt.Errorf("process %d not found", pid)
 	}
 
 	new, err := loadProcess(pid, t.cfg)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	parent := t.pMap[new.parentID]
 	if parent == nil {
-		return fmt.Errorf("parent %d of new process %d not found", new.parentID, pid)
+		return false, fmt.Errorf("parent %d of new process %d not found", new.parentID, pid)
 	}
 
 	switch parent.match {
@@ -199,18 +205,18 @@ func (t *Tree) reloadProcess(pid int) error {
 
 	*old = *new
 
-	return nil
+	return new.match == matchAsDescendant, nil
 }
 
-func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) error {
+func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) (bool, error) {
 	p := t.pMap[pid]
 	if p == nil {
-		return fmt.Errorf("process %d not found", pid)
+		return false, fmt.Errorf("process %d not found", pid)
 	}
 
 	parent := t.pMap[ppid]
 	if parent == nil {
-		return fmt.Errorf("parent %d of new process %d not found", ppid, pid)
+		return false, fmt.Errorf("parent %d of new process %d not found", ppid, pid)
 	}
 
 	delete(t.pMap, pid)
@@ -219,46 +225,38 @@ func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) error {
 		signal: signal,
 	}
 
-	return nil
+	return t.cfg.ShowDead && p.match != matchNone, nil
 }
 
 func (t *Tree) toggleShowDead() {
-	t.showDead = !t.showDead
+	t.cfg.ShowDead = !t.cfg.ShowDead
 }
 
-func (t *Tree) renderStdout() error {
-	t.render(os.Stdout)
+func (t *Tree) preparePager() (*pager.Pager, error) {
+	var p pager.Pager
 
-	return nil
-}
-
-func (t *Tree) render(w io.Writer) {
-	for _, p := range t.topLevel {
-		t.dumpProcess(p, w, 0)
-	}
-}
-
-func (t *Tree) dumpProcess(p *process, w io.Writer, level int) {
-	if p.match == matchNone {
-		return
-	}
-
-	if p.exit != nil && !t.showDead {
-		return
-	}
-
-	indent := strings.Repeat("  ", level)
-
-	fmt.Fprintf(w, "%s%s\n", indent, p.format(t.cfg))
-
-	if t.cfg.ShowThreads {
-		for _, t := range p.threads {
-			fmt.Fprintf(w, " %s%s\n", indent, t.format())
+	if t.cfg.Interactive || t.cfg.TruncateTerm {
+		w, h, err := term.GetSize(os.Stdout.Fd())
+		if err != nil {
+			return nil, fmt.Errorf("getting term size: %w", err)
 		}
+
+		p.SetMaxWidth(w)
+		if t.cfg.Interactive {
+			p.SetMaxHeight(h)
+		}
+	} else if t.cfg.Truncate > 0 {
+		p.SetMaxWidth(t.cfg.Truncate)
 	}
 
-	for _, c := range p.children {
-		t.dumpProcess(c, w, level+1)
+	return &p, nil
+}
+
+func (t *Tree) render(pg *pager.Pager) {
+	pg.Reset()
+
+	for _, p := range t.topLevel {
+		p.render(t.cfg, pg, 0)
 	}
 }
 

@@ -32,7 +32,8 @@ func Execute() error {
 	f.BoolVarP(&cfg.ShowProcessGroups, "show-process-groups", "G", false, "")
 
 	f.BoolVarP(&cfg.ShowNamespacePID, "show-namespace-pid", "N", false, "")
-	f.IntVarP(&cfg.Truncate, "truncate", "t", 0, "Truncate lines longer than the passed value")
+	f.IntVarP(&cfg.Truncate, "truncate", "r", 0, "Truncate lines longer than the passed value")
+	f.BoolVarP(&cfg.TruncateTerm, "truncate-term", "t", false, "Truncate lines that don't fit the terminal width")
 
 	f.BoolVarP(&cfg.Interactive, "interactive", "i", false, "Run interactive TUI")
 	f.BoolVarP(&cfg.ShowDead, "show-dead", "D", false, "Don't hide exited processes (applies only in TUI)")

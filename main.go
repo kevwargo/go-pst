@@ -7,6 +7,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.Flags() | log.Lmicroseconds)
+
 	if err := pst.Execute(); err != nil {
 		log.Fatal(err)
 	}
