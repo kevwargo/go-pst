@@ -40,6 +40,7 @@ type procAttrs struct {
 type thread struct {
 	id   int
 	name string
+	dead bool
 }
 
 type exitStatus struct {
@@ -133,22 +134,26 @@ func (p *process) loadThreads(cfg *Config) error {
 			return nil
 		}
 
-		attrs, err := readAttrsMap(tid)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		} else if err != nil {
-			return err
-		}
-
-		p.threads = append(p.threads, &thread{
-			id:   tid,
-			name: attrs["Name"],
-		})
-
-		return nil
+		return p.loadThread(tid)
 	})
 
 	return err
+}
+
+func (p *process) loadThread(tid int) error {
+	attrs, err := readAttrsMap(tid)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	p.threads = append(p.threads, &thread{
+		id:   tid,
+		name: attrs["Name"],
+	})
+
+	return nil
 }
 
 func (p *process) loadFDs(cfg *Config) error {
@@ -176,10 +181,25 @@ func (p *process) render(cfg *Config, pg *pager.Pager, level int) {
 	}
 
 	indent := strings.Repeat("  ", level)
-	pg.WriteLine(indent+p.formatPid(), fmt.Sprintf("%s %s", p.attrs.formatWorkdir(), p.attrs.formatCmdline()))
+	pg.WriteLine(
+		fmt.Sprintf("%s%s", indent, p.formatPid()),
+		fmt.Sprintf("%s %s", p.attrs.formatWorkdir(), p.attrs.formatCmdline()),
+	)
 
 	for _, t := range p.threads {
-		pg.WriteLine(fmt.Sprintf("%s {%d} ", indent, t.id), t.name)
+		var dead string
+		if t.dead {
+			dead = " *dead*"
+
+			if !cfg.ShowDead {
+				continue
+			}
+		}
+
+		pg.WriteLine(
+			fmt.Sprintf("%s {%d%s} ", indent, t.id, dead),
+			t.name,
+		)
 	}
 
 	for _, c := range p.children {
@@ -287,10 +307,6 @@ func (a *procAttrs) formatCmdline() string {
 	jsonArgs, _ := json.Marshal(args)
 
 	return string(jsonArgs)
-}
-
-func (t *thread) format() string {
-	return fmt.Sprintf("{%d} %s", t.id, t.name)
 }
 
 func pidPath(pid int, parts ...string) string {

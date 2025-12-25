@@ -111,14 +111,14 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 	switch ev := msg.event.(type) {
 	case procwatch.EventForkProc:
 		changed, err = t.tree.insertProcess(ev.PID, ev.ParentPID)
-	// case procwatch.EventForkThread:
-	// 	cmd = tea.Printf("thread %d -> %d", ev.PID, ev.TID)
+	case procwatch.EventForkThread:
+		changed, err = t.tree.insertThread(ev.TID, ev.PID)
 	case procwatch.EventExec:
 		changed, err = t.tree.reloadProcess(ev.PID)
 	case procwatch.EventExitProc:
 		changed, err = t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
-		// case procwatch.EventExitThread:
-		// 	cmd = tea.Printf("exit-thread %d (process:%d)", ev.TID, ev.PID)
+	case procwatch.EventExitThread:
+		changed, err = t.tree.removeThread(ev.TID, ev.PID)
 	}
 
 	if err != nil {
@@ -139,8 +139,9 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "q", "ctrl+c":
 		cmd = t.closeWatcher
 	case "d":
-		t.tree.toggleShowDead()
-		t.tree.render(t.pager)
+		t.toggleShowDead()
+	case "t":
+		t.toggleShowThreads()
 	case "f":
 		cmd = t.toggleFullscreen()
 	case "up":
@@ -171,6 +172,29 @@ func (t *tui) toggleFullscreen() tea.Cmd {
 	}
 
 	return tea.ExitAltScreen
+}
+
+func (t *tui) toggleShowDead() {
+	// TODO: FIXME: sometimes toggling this hides the process that has dead children
+	// but scrolling shows this process again.
+	t.tree.cfg.ShowDead = !t.tree.cfg.ShowDead
+	t.tree.render(t.pager)
+}
+
+func (t *tui) toggleShowThreads() {
+	t.tree.cfg.ShowThreads = !t.tree.cfg.ShowThreads
+
+	if t.tree.cfg.ShowThreads {
+		for _, p := range t.tree.pMap {
+			p.loadThreads(t.tree.cfg)
+		}
+	} else {
+		for _, p := range t.tree.pMap {
+			p.threads = nil
+		}
+	}
+
+	t.tree.render(t.pager)
 }
 
 func (t *tui) openLog() (*os.File, error) {

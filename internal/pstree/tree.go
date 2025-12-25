@@ -228,8 +228,44 @@ func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) (bool, error) {
 	return t.cfg.ShowDead && p.match != matchNone, nil
 }
 
-func (t *Tree) toggleShowDead() {
-	t.cfg.ShowDead = !t.cfg.ShowDead
+func (t *Tree) insertThread(tid, pid int) (bool, error) {
+	if !t.cfg.ShowThreads {
+		return false, nil
+	}
+
+	p := t.pMap[pid]
+	if p == nil {
+		return false, fmt.Errorf("process %d not found", pid)
+	}
+
+	for _, thread := range p.threads {
+		if thread.id == tid {
+			return false, nil
+		}
+	}
+
+	if err := p.loadThread(tid); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (t *Tree) removeThread(tid, pid int) (bool, error) {
+	p := t.pMap[pid]
+	if p == nil {
+		return false, fmt.Errorf("process %d not found", pid)
+	}
+
+	for _, t := range p.threads {
+		if !t.dead && t.id == tid {
+			t.dead = true
+
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (t *Tree) preparePager() (*pager.Pager, error) {
