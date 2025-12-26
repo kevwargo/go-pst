@@ -13,7 +13,8 @@ type Pager struct {
 	yPos      int
 	xPos      int
 
-	buf *bytes.Buffer
+	buf          bytes.Buffer
+	needsRefresh bool
 }
 
 func (p *Pager) WriteLine(fixed, scrollable string) {
@@ -21,30 +22,51 @@ func (p *Pager) WriteLine(fixed, scrollable string) {
 		fixed:      fixed,
 		scrollable: scrollable,
 	})
+	p.needsRefresh = true
 }
 
 func (p *Pager) SetMaxWidth(w int) {
 	p.maxWidth = w
+	p.needsRefresh = true
 }
 
 func (p *Pager) SetMaxHeight(h int) {
 	p.maxHeight = h
+	p.needsRefresh = true
 }
 
 func (p *Pager) Up() {
-	p.yPos--
+	if p.incYPos(-1) {
+		p.needsRefresh = true
+	}
 }
 
 func (p *Pager) Down() {
-	p.yPos++
+	if p.incYPos(1) {
+		p.needsRefresh = true
+	}
+}
+
+func (p *Pager) incYPos(delta int) bool {
+	if p.maxHeight <= 0 || len(p.lines) <= p.maxHeight {
+		return false
+	}
+
+	old := p.yPos
+	p.yPos = max(p.yPos+delta, 0)
+	p.yPos = min(p.yPos, len(p.lines)-p.maxHeight)
+
+	return old != p.yPos
 }
 
 func (p *Pager) Left() {
 	p.xPos++
+	p.needsRefresh = true
 }
 
 func (p *Pager) Right() {
 	p.xPos--
+	p.needsRefresh = true
 }
 
 func (p *Pager) Reset() {
@@ -56,29 +78,18 @@ func (p *Pager) String() string {
 		return ""
 	}
 
-	if p.buf == nil {
-		var n int
-		for _, l := range p.lines {
-			n += len(l.fixed) + len(l.scrollable)
-		}
-
-		p.buf = bytes.NewBuffer(make([]byte, 0, n))
+	if p.needsRefresh {
+		p.refresh()
 	}
-
-	p.render()
 
 	return p.buf.String()
 }
 
-func (p *Pager) render() {
-	// TODO: make this optional to avoid unnecessary re-renders
-
+func (p *Pager) refresh() {
 	p.buf.Reset()
 
 	lines := p.lines
 	if p.maxHeight > 0 && len(lines) > p.maxHeight {
-		p.yPos = max(p.yPos, 0)
-		p.yPos = min(p.yPos, len(lines)-p.maxHeight)
 		lines = lines[p.yPos : p.yPos+p.maxHeight]
 	}
 
@@ -89,11 +100,13 @@ func (p *Pager) render() {
 		}
 
 		if i == len(lines)-1 {
-			fmt.Fprint(p.buf, textLine)
+			fmt.Fprint(&p.buf, textLine)
 		} else {
-			fmt.Fprintln(p.buf, textLine)
+			fmt.Fprintln(&p.buf, textLine)
 		}
 	}
+
+	p.needsRefresh = false
 }
 
 type line struct {

@@ -40,9 +40,12 @@ func runTUI(tree *Tree, pg *pager.Pager) error {
 }
 
 type tui struct {
-	tree       *Tree
-	pager      *pager.Pager
-	watcher    procwatch.Watcher
+	tree    *Tree
+	pager   *pager.Pager
+	watcher procwatch.Watcher
+
+	width      int
+	height     int
 	fullscreen bool
 	quitting   bool
 }
@@ -136,6 +139,8 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 		t.toggleShowThreads()
 	case "f":
 		cmd = t.toggleFullscreen()
+	case "r":
+		cmd = t.forceRefresh
 	case "up":
 		t.pager.Up()
 	case "down":
@@ -145,6 +150,13 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
+func (t *tui) forceRefresh() tea.Msg {
+	return tea.WindowSizeMsg{
+		Width:  t.width,
+		Height: t.height,
+	}
+}
+
 func (t *tui) closeWatcher() tea.Msg {
 	t.watcher.Close()
 
@@ -152,6 +164,8 @@ func (t *tui) closeWatcher() tea.Msg {
 }
 
 func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
+	t.width = msg.Width
+	t.height = msg.Height
 	t.pager.SetMaxWidth(msg.Width - 1)
 	t.pager.SetMaxHeight(msg.Height - 1)
 }
@@ -167,8 +181,6 @@ func (t *tui) toggleFullscreen() tea.Cmd {
 }
 
 func (t *tui) toggleShowDead() {
-	// TODO: FIXME: sometimes toggling this hides the process that has dead children
-	// but scrolling shows this process again.
 	t.tree.cfg.ShowDead = !t.tree.cfg.ShowDead
 	t.tree.render(t.pager)
 }
