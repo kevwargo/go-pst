@@ -160,8 +160,8 @@ func (t *tui) closeWatcher() tea.Msg {
 }
 
 func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
-	t.pager.SetMaxWidth(msg.Width)
-	t.pager.SetMaxHeight(msg.Height)
+	t.pager.SetMaxWidth(msg.Width - 1)
+	t.pager.SetMaxHeight(msg.Height - 1)
 }
 
 func (t *tui) toggleFullscreen() tea.Cmd {
