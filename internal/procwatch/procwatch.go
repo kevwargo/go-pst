@@ -1,6 +1,8 @@
 package procwatch
 
 import (
+	"sync"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -59,9 +61,10 @@ func Watch() (Watcher, error) {
 }
 
 type watcher struct {
-	sock   int
-	msgCh  chan watcherMessage
-	doneCh chan struct{}
+	sock     int
+	msgCh    chan watcherMessage
+	doneCh   chan struct{}
+	doneOnce sync.Once
 }
 
 type watcherMessage struct {
@@ -79,6 +82,6 @@ func (w *watcher) Recv() (any, error) {
 }
 
 func (w *watcher) Close() {
-	close(w.doneCh)
+	w.doneOnce.Do(func() { close(w.doneCh) })
 	unix.Close(w.sock)
 }
