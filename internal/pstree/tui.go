@@ -103,26 +103,18 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 		return tea.Sequence(cmd, tea.Quit)
 	}
 
-	var (
-		changed bool
-		err     error
-	)
-
+	var changed bool
 	switch ev := msg.event.(type) {
 	case procwatch.EventForkProc:
-		changed, err = t.tree.insertProcess(ev.PID, ev.ParentPID)
+		changed, _ = t.tree.insertProcess(ev.PID, ev.ParentPID)
 	case procwatch.EventForkThread:
-		changed, err = t.tree.insertThread(ev.TID, ev.PID)
+		changed, _ = t.tree.insertThread(ev.TID, ev.PID)
 	case procwatch.EventExec:
-		changed, err = t.tree.reloadProcess(ev.PID)
+		changed, _ = t.tree.reloadProcess(ev.PID)
 	case procwatch.EventExitProc:
-		changed, err = t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
+		changed, _ = t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
 	case procwatch.EventExitThread:
-		changed, err = t.tree.removeThread(ev.TID, ev.PID)
-	}
-
-	if err != nil {
-		return tea.Printf("handling %T: %v", msg.event, err)
+		changed, _ = t.tree.removeThread(ev.TID, ev.PID)
 	}
 
 	if changed {
@@ -156,7 +148,7 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 func (t *tui) closeWatcher() tea.Msg {
 	t.watcher.Close()
 
-	return struct{}{}
+	return nil
 }
 
 func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {

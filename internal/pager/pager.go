@@ -3,7 +3,6 @@ package pager
 import (
 	"bytes"
 	"fmt"
-	"log"
 )
 
 type Pager struct {
@@ -26,12 +25,10 @@ func (p *Pager) WriteLine(fixed, scrollable string) {
 
 func (p *Pager) SetMaxWidth(w int) {
 	p.maxWidth = w
-	log.Printf("max width = %d", w)
 }
 
 func (p *Pager) SetMaxHeight(h int) {
 	p.maxHeight = h
-	log.Printf("max height = %d", h)
 }
 
 func (p *Pager) Up() {
@@ -82,23 +79,19 @@ func (p *Pager) render() {
 	if p.maxHeight > 0 && len(lines) > p.maxHeight {
 		p.yPos = max(p.yPos, 0)
 		p.yPos = min(p.yPos, len(lines)-p.maxHeight)
-		log.Printf("current term height: %d, lines: %d, clipping to [%d:%d]",
-			p.maxHeight, len(p.lines), p.yPos, p.yPos+p.maxHeight,
-		)
 		lines = lines[p.yPos : p.yPos+p.maxHeight]
 	}
 
 	for i, line := range lines {
-		fullLine := line.fixed + line.scrollable
-		if p.maxWidth > 0 && len(fullLine) > p.maxWidth {
-			log.Printf("clipping line %d to %d", len(fullLine), p.maxWidth)
-			fullLine = fullLine[:p.maxWidth]
+		textLine := line.fixed + line.scrollable
+		if p.maxWidth > 0 && len(textLine) > p.maxWidth {
+			textLine = textLine[:p.maxWidth]
 		}
 
-		if i < len(lines)-1 {
-			fmt.Fprintln(p.buf, fullLine)
+		if i == len(lines)-1 {
+			fmt.Fprint(p.buf, textLine)
 		} else {
-			fmt.Fprint(p.buf, fullLine)
+			fmt.Fprintln(p.buf, textLine)
 		}
 	}
 }
