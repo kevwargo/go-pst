@@ -228,7 +228,7 @@ func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) (bool, error) {
 		signal: signal,
 	}
 
-	return t.cfg.ShowDead && p.match != matchNone, nil
+	return p.match != matchNone, nil
 }
 
 func (t *Tree) insertThread(tid, pid int) (bool, error) {
