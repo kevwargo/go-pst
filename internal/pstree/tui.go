@@ -114,6 +114,8 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 		changed, _ = t.tree.insertThread(ev.TID, ev.PID)
 	case procwatch.EventExec:
 		changed, _ = t.tree.reloadProcess(ev.PID)
+	case procwatch.EventComm:
+		changed, _ = t.tree.reloadProcess(ev.PID)
 	case procwatch.EventExitProc:
 		changed, _ = t.tree.removeProcess(ev.PID, ev.ParentPID, ev.ExitCode, ev.ExitSignal)
 	case procwatch.EventExitThread:

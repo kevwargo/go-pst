@@ -21,6 +21,12 @@ type EventExec struct {
 	TID int
 }
 
+type EventComm struct {
+	PID  int
+	TID  int
+	Comm string
+}
+
 type EventExitProc struct {
 	PID        int
 	ParentPID  int

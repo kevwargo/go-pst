@@ -140,6 +140,13 @@ func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {
 			PID: int(data.process_tgid),
 			TID: int(data.process_pid),
 		}}
+	case procEventComm:
+		data := (*C.struct_comm_proc_event)(dataPtr)
+		w.msgCh <- watcherMessage{ev: EventComm{
+			PID:  int(data.process_tgid),
+			TID:  int(data.process_pid),
+			Comm: C.GoString(&data.comm[0]),
+		}}
 	case procEventExit:
 		data := (*C.struct_exit_proc_event)(dataPtr)
 		if data.parent_pid == 0 && data.parent_tgid == 0 {
