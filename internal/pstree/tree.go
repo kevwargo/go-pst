@@ -271,6 +271,32 @@ func (t *Tree) removeThread(tid, pid int) (bool, error) {
 	return false, nil
 }
 
+func (t *Tree) cleanupDead() (changed bool) {
+	for pid, p := range t.pMap {
+		p.children = slices.DeleteFunc(p.children, func(c *process) bool {
+			if c.exit != nil {
+				changed = true
+				return true
+			}
+
+			return false
+		})
+		p.threads = slices.DeleteFunc(p.threads, func(t *thread) bool {
+			if t.dead {
+				changed = true
+				return true
+			}
+
+			return false
+		})
+		if p.exit != nil {
+			delete(t.pMap, pid)
+		}
+	}
+
+	return changed
+}
+
 func (t *Tree) preparePager() (*pager.Pager, error) {
 	var p pager.Pager
 

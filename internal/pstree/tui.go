@@ -135,6 +135,8 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 		cmd = t.closeWatcher
 	case "d":
 		t.toggleShowDead()
+	case "D":
+		t.cleanupDead()
 	case "t":
 		t.toggleShowThreads()
 	case "f":
@@ -199,6 +201,12 @@ func (t *tui) toggleShowThreads() {
 	}
 
 	t.tree.render(t.pager)
+}
+
+func (t *tui) cleanupDead() {
+	if t.tree.cleanupDead() {
+		t.tree.render(t.pager)
+	}
 }
 
 func (t *tui) openLog() (*os.File, error) {
