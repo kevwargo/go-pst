@@ -63,6 +63,12 @@ func (t *Tree) loadProcesses() error {
 
 	return iterIntDirEntries(procDir, func(pid int) error {
 		if pid == selfPid {
+			// TODO: skip also sudo ancestors of selfPid, if present.
+			// Example:
+			//   [292436] /bin/bash
+			//     [359788] sudo ./go-pst ipython -i
+			//       [359794] sudo ./go-pst ipython -i
+			// self -> [359795] ./go-pst ipython -i
 			return nil
 		}
 
