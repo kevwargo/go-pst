@@ -12,9 +12,8 @@ func Execute() error {
 		Use:           "pst [flags] PATTERN",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Args:          cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return execute(&cfg, args[0])
+			return execute(&cfg, args)
 		},
 	}
 
@@ -45,11 +44,15 @@ func Execute() error {
 	return cmd.Execute()
 }
 
-func execute(cfg *pstree.Config, pattern string) error {
+func execute(cfg *pstree.Config, args []string) error {
+	if len(args) > 0 {
+		cfg.Pattern = &args[0]
+	}
+
 	tree, err := pstree.Build(cfg)
 	if err != nil {
 		return err
 	}
 
-	return tree.Run(pattern)
+	return tree.Run()
 }

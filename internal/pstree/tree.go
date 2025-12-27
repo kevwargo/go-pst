@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"regexp"
@@ -14,9 +15,12 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/kevwargo/go-pst/internal/pager"
+	"github.com/kevwargo/go-pst/internal/procwatch"
 )
 
 type Config struct {
+	Pattern *string
+
 	FullMatch         bool
 	ShowThreads       bool
 	ShowMainThread    bool
@@ -41,10 +45,15 @@ type Tree struct {
 	cfg      *Config
 	topLevel []*process
 	pMap     map[int]*process
-	matchFn  func(*process, string) bool
+	matchFn  func(*process) bool
+	pager    pager.Pager
 }
 
 func Build(cfg *Config) (*Tree, error) {
+	if cfg.Pattern == nil && !cfg.InspectAllFDs {
+		return nil, errors.New("Pattern required when --inspect-all-fds not used")
+	}
+
 	tree := Tree{cfg: cfg}
 
 	if err := tree.loadProcesses(); err != nil {
@@ -52,9 +61,35 @@ func Build(cfg *Config) (*Tree, error) {
 	}
 
 	tree.arrangeProcesses()
-	tree.initMatchFn()
+
+	if cfg.Pattern != nil {
+		tree.initMatchFn()
+		tree.matchProcesses()
+	}
 
 	return &tree, nil
+}
+
+func (t *Tree) Run() error {
+	if t.cfg.DumpProcessSnapshot != "" {
+		return t.dumpProcessSnapshot()
+	}
+
+	if t.cfg.InspectAllFDs {
+		return t.inspectFDs()
+	}
+
+	if err := t.initPager(); err != nil {
+		return err
+	}
+
+	t.repaint()
+	if t.cfg.Interactive {
+		return runTUI(t)
+	}
+
+	_, err := fmt.Print(t.pager.String())
+	return err
 }
 
 func (t *Tree) loadProcesses() error {
@@ -95,63 +130,38 @@ func (t *Tree) arrangeProcesses() {
 
 func (t *Tree) initMatchFn() {
 	if t.cfg.FullMatch {
-		t.matchFn = func(p *process, pattern string) bool {
-			return strings.Contains(p.attrs.formatCmdline(), pattern)
+		t.matchFn = func(p *process) bool {
+			return strings.Contains(p.attrs.formatCmdline(), *t.cfg.Pattern)
 		}
 	} else {
-		t.matchFn = func(p *process, pattern string) bool {
-			if strconv.Itoa(p.id) == pattern {
+		t.matchFn = func(p *process) bool {
+			if strconv.Itoa(p.id) == *t.cfg.Pattern {
 				// TODO: standardize this behavior, maybe with a separate flag
 				return true
 			}
 
 			return slices.ContainsFunc(p.attrs.cmdlineArgs(), func(a string) bool {
-				return strings.Contains(a, pattern)
+				return strings.Contains(a, *t.cfg.Pattern)
 			})
 		}
 	}
 }
 
-func (t *Tree) Run(pattern string) error {
-	if t.cfg.DumpProcessSnapshot != "" {
-		return t.dumpProcessSnapshot(pattern)
-	}
-
-	if t.cfg.InspectAllFDs {
-		return t.inspectFDs()
-	}
-
-	t.match(pattern)
-
-	pg, err := t.preparePager()
-	if err != nil {
-		return err
-	}
-	t.render(pg)
-
-	if t.cfg.Interactive {
-		return runTUI(t, pg)
-	}
-
-	_, err = fmt.Println(pg.String())
-	return err
-}
-
-func (t *Tree) match(pattern string) {
+func (t *Tree) matchProcesses() {
 	for _, p := range t.topLevel {
-		t.matchProcess(p, pattern)
+		t.matchProcess(p)
 	}
 }
 
-func (t *Tree) matchProcess(p *process, pattern string) {
-	if t.matchFn(p, pattern) {
+func (t *Tree) matchProcess(p *process) {
+	if t.matchFn(p) {
 		p.match = matchDirect
-		t.matchDescendants(p, pattern)
+		t.matchDescendants(p)
 	} else {
 		p.match = matchNone
 
 		for _, c := range p.children {
-			t.matchProcess(c, pattern)
+			t.matchProcess(c)
 
 			if c.match != matchNone {
 				p.match = matchAsAncestor
@@ -160,121 +170,162 @@ func (t *Tree) matchProcess(p *process, pattern string) {
 	}
 }
 
-func (t *Tree) matchDescendants(p *process, pattern string) {
+func (t *Tree) matchDescendants(p *process) {
 	for _, c := range p.children {
-		if t.matchFn(c, pattern) {
+		if t.matchFn(c) {
 			c.match = matchDirect
 		} else {
 			c.match = matchAsDescendant
 		}
 
-		t.matchDescendants(c, pattern)
+		t.matchDescendants(c)
 	}
 }
 
-func (t *Tree) insertProcess(pid, ppid int) (bool, error) {
-	if _, ok := t.pMap[pid]; ok {
-		return false, nil
+func (t *Tree) resetPattern(pattern string) {
+	if t.cfg.Pattern == nil {
+		t.cfg.Pattern = &pattern
+	} else {
+		*t.cfg.Pattern = pattern
 	}
 
-	parent := t.pMap[ppid]
+	t.initMatchFn()
+	t.matchProcesses()
+}
+
+func (t *Tree) handleNewProcess(ev procwatch.EventForkProc) {
+	parent := t.pMap[ev.ParentPID]
 	if parent == nil {
-		return false, fmt.Errorf("parent %d of new process %d not found", ppid, pid)
+		return
 	}
 
-	p := parent.fork(pid)
+	p := parent.fork(ev.PID)
 	parent.children = append(parent.children, p)
-	t.pMap[pid] = p
+	t.pMap[p.id] = p
 
-	return parent.match == matchAsDescendant || parent.match == matchDirect, nil
+	switch p.match {
+	case matchAsDescendant, matchDirect:
+		t.repaint()
+	}
 }
 
-func (t *Tree) reloadProcess(pid int) (bool, error) {
-	old := t.pMap[pid]
-	if old == nil {
-		return false, fmt.Errorf("process %d not found", pid)
-	}
-
-	new, err := loadProcess(pid, t.cfg)
-	if err != nil {
-		return false, err
-	}
-
-	parent := t.pMap[new.parentID]
-	if parent == nil {
-		return false, fmt.Errorf("parent %d of new process %d not found", new.parentID, pid)
-	}
-
-	// TODO: match new process and optionally re-match existing processes that are related
-
-	switch parent.match {
-	case matchDirect, matchAsDescendant:
-		new.match = matchAsDescendant
-	}
-
-	*old = *new
-
-	return new.match == matchAsDescendant, nil
-}
-
-func (t *Tree) removeProcess(pid, ppid, exitCode, signal int) (bool, error) {
-	p := t.pMap[pid]
-	if p == nil {
-		return false, fmt.Errorf("process %d not found", pid)
-	}
-
-	parent := t.pMap[ppid]
-	if parent == nil {
-		return false, fmt.Errorf("parent %d of new process %d not found", ppid, pid)
-	}
-
-	delete(t.pMap, pid)
-	p.exit = &exitStatus{
-		code:   exitCode,
-		signal: signal,
-	}
-
-	return p.match != matchNone, nil
-}
-
-func (t *Tree) insertThread(tid, pid int) (bool, error) {
+func (t *Tree) handleNewThread(ev procwatch.EventForkThread) {
 	if !t.cfg.ShowThreads {
-		return false, nil
+		return
 	}
 
-	p := t.pMap[pid]
+	p := t.pMap[ev.PID]
 	if p == nil {
-		return false, fmt.Errorf("process %d not found", pid)
+		return
 	}
 
-	for _, thread := range p.threads {
-		if thread.id == tid {
-			return false, nil
-		}
+	if p.loadThread(ev.TID) == nil {
+		t.repaint()
 	}
-
-	if err := p.loadThread(tid); err != nil {
-		return false, err
-	}
-
-	return true, nil
 }
 
-func (t *Tree) removeThread(tid, pid int) (bool, error) {
-	p := t.pMap[pid]
-	if p == nil {
-		return false, fmt.Errorf("process %d not found", pid)
-	}
+func (t *Tree) handleExec(ev procwatch.EventExec) {
+	t.updateProcess(ev.PID)
+}
 
-	for _, t := range p.threads {
-		if !t.dead && t.id == tid {
-			t.dead = true
+func (t *Tree) handleComm(ev procwatch.EventComm) {
+	if ev.PID == ev.TID {
+		t.updateProcess(ev.PID)
+	} else {
+		if !t.cfg.ShowThreads {
+			return
+		}
 
-			return true, nil
+		p := t.pMap[ev.PID]
+		if p == nil {
+			return
+		}
+
+		for _, thr := range p.threads {
+			if thr.id == ev.TID && !thr.dead {
+				thr.name = ev.Comm
+				t.repaint()
+				break
+			}
 		}
 	}
+}
 
-	return false, nil
+func (t *Tree) updateProcess(pid int) {
+	p := t.pMap[pid]
+	if p == nil {
+		return
+	}
+
+	newProc, err := loadProcess(pid, t.cfg)
+	if err != nil {
+		return
+	}
+
+	parent := t.pMap[newProc.parentID]
+	if parent == nil {
+		return
+	}
+
+	if p.match == matchDirect {
+		log.Printf("matching %d|%q updating to %q", p.id, p.attrs.formatCmdline(), newProc.attrs.formatCmdline())
+	}
+
+	*p = *newProc
+
+	t.matchProcesses()
+	t.repaint()
+}
+
+func (t *Tree) handleProcessExit(ev procwatch.EventExitProc) {
+	p := t.pMap[ev.PID]
+	if p == nil {
+		return
+	}
+
+	p.exit = &exitStatus{
+		code:   ev.ExitCode,
+		signal: ev.ExitSignal,
+	}
+
+	delete(t.pMap, ev.PID)
+
+	for _, c := range p.children {
+		nc, err := loadProcess(c.id, t.cfg)
+		if err != nil {
+			delete(t.pMap, c.id)
+			continue
+		}
+
+		parent := t.pMap[nc.parentID] // new parent
+		if parent == nil {
+			delete(t.pMap, c.id)
+			continue
+		}
+
+		log.Printf("reparent %d|%q %d -> %d", c.id, c.attrs.formatCmdline(), ev.PID, nc.parentID)
+
+		parent.children = append(parent.children, c)
+		*c = *nc
+	}
+
+	t.matchProcesses()
+	t.repaint()
+}
+
+func (t *Tree) handleThreadExit(ev procwatch.EventExitThread) {
+	p := t.pMap[ev.PID]
+	if p == nil {
+		return
+	}
+
+	for _, thr := range p.threads {
+		if thr.id == ev.TID {
+			thr.dead = true
+			t.repaint()
+			break
+		}
+	}
 }
 
 func (t *Tree) cleanupDead() (changed bool) {
@@ -303,49 +354,43 @@ func (t *Tree) cleanupDead() (changed bool) {
 	return changed
 }
 
-func (t *Tree) preparePager() (*pager.Pager, error) {
-	var p pager.Pager
-
+func (t *Tree) initPager() error {
 	if t.cfg.Interactive || t.cfg.TruncateTerm {
 		w, h, err := term.GetSize(os.Stdout.Fd())
 		if err != nil {
-			return nil, fmt.Errorf("getting term size: %w", err)
+			return fmt.Errorf("getting term size: %w", err)
 		}
 
-		p.SetMaxWidth(w)
+		t.pager.SetMaxWidth(w)
 		if t.cfg.Interactive {
-			p.SetMaxHeight(h)
+			t.pager.SetMaxHeight(h)
 		}
 	} else if t.cfg.Truncate > 0 {
-		p.SetMaxWidth(t.cfg.Truncate)
+		t.pager.SetMaxWidth(t.cfg.Truncate)
 	}
 
-	return &p, nil
+	return nil
 }
 
-func (t *Tree) render(pg *pager.Pager) {
-	pg.Reset()
+func (t *Tree) repaint() {
+	t.pager.Reset()
 
 	for _, p := range t.topLevel {
-		p.render(t.cfg, pg, 0)
+		p.render(t.cfg, &t.pager, 0)
 	}
+}
+
+func (t *Tree) render() string {
+	return t.pager.String()
 }
 
 func (t *Tree) inspectFDs() error {
 	fdLinkMap := make(map[string]int)
-
-	var visitProc func([]*process)
-	visitProc = func(ps []*process) {
-		for _, p := range ps {
-			for _, link := range p.fds {
-				fdLinkMap[link]++
-			}
-
-			visitProc(p.children)
+	for _, p := range t.pMap {
+		for _, link := range p.fds {
+			fdLinkMap[link]++
 		}
 	}
-
-	visitProc(t.topLevel)
 
 	specialRe := regexp.MustCompile("^[a-zA-Z0-9_-]+:")
 	fdLinks := slices.Collect(maps.Keys(fdLinkMap))
@@ -375,10 +420,14 @@ func (t *Tree) inspectFDs() error {
 	return tw.Flush()
 }
 
-func (t *Tree) dumpProcessSnapshot(pattern string) error {
-	pid, err := strconv.Atoi(pattern)
+func (t *Tree) dumpProcessSnapshot() error {
+	if t.cfg.Pattern == nil {
+		return errors.New("Pattern required for --dump-process-snapshot")
+	}
+
+	pid, err := strconv.Atoi(*t.cfg.Pattern)
 	if err != nil {
-		return fmt.Errorf("%q is not a valid PID: %w", pattern, err)
+		return fmt.Errorf("%q is not a valid PID: %w", *t.cfg.Pattern, err)
 	}
 
 	p := t.pMap[pid]

@@ -69,6 +69,21 @@ const (
 	matchDirect
 )
 
+func (m matchState) String() string {
+	switch m {
+	case matchNone:
+		return "None"
+	case matchAsAncestor:
+		return "AsAncestor"
+	case matchAsDescendant:
+		return "AsDescendant"
+	case matchDirect:
+		return "Direct"
+	default:
+		return "<unknown>"
+	}
+}
+
 func loadProcess(pid int, cfg *Config) (*process, error) {
 	p := process{id: pid}
 
@@ -189,11 +204,11 @@ func (p *process) render(cfg *Config, pg *pager.Pager, level int) {
 	for _, t := range p.threads {
 		var dead string
 		if t.dead {
-			dead = " *dead*"
-
 			if !cfg.ShowDead {
 				continue
 			}
+
+			dead = " *dead*"
 		}
 
 		pg.WriteLine(
