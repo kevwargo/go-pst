@@ -72,7 +72,7 @@ func (t *tui) View() string {
 		return ""
 	}
 
-	return t.tree.render()
+	return t.tree.render() + "\n"
 }
 
 type procMsg struct {

@@ -88,7 +88,7 @@ func (t *Tree) Run() error {
 		return runTUI(t)
 	}
 
-	_, err := fmt.Print(t.pager.String())
+	_, err := fmt.Println(t.render())
 	return err
 }
 

@@ -93,16 +93,17 @@ func (p *Pager) refresh() {
 		lines = lines[p.yPos : p.yPos+p.maxHeight]
 	}
 
-	for _, line := range lines {
+	for i, line := range lines {
 		textLine := line.fixed + line.scrollable
 		if p.maxWidth > 0 && len(textLine) > p.maxWidth {
 			textLine = textLine[:p.maxWidth]
 		}
 
-		// TODO: resolve disappearing lines during tea.standard_renderer render().
-		// This is a temporary measure because the trouble seems to be when last line does not
-		// end with newline.
-		fmt.Fprintln(&p.buf, textLine)
+		if i == len(lines)-1 {
+			fmt.Fprint(&p.buf, textLine)
+		} else {
+			fmt.Fprintln(&p.buf, textLine)
+		}
 	}
 
 	p.needsRefresh = false
