@@ -22,6 +22,7 @@ func (p *Pager) WriteLine(fixed, scrollable string) {
 		fixed:      fixed,
 		scrollable: scrollable,
 	})
+
 	p.needsRefresh = true
 }
 
@@ -72,13 +73,32 @@ func (p *Pager) incYPos(delta int) bool {
 }
 
 func (p *Pager) Left() {
-	p.xPos++
-	p.needsRefresh = true
+	if p.incXPos(-1) {
+		p.needsRefresh = true
+	}
 }
 
 func (p *Pager) Right() {
-	p.xPos--
-	p.needsRefresh = true
+	if p.incXPos(1) {
+		p.needsRefresh = true
+	}
+}
+
+func (p *Pager) incXPos(delta int) bool {
+	if p.maxWidth <= 0 {
+		return false
+	}
+
+	var xPosMax int
+	for _, line := range p.visibleLines() {
+		xPosMax = max(xPosMax, line.length()-p.maxWidth)
+	}
+
+	old := p.xPos
+	p.xPos = max(p.xPos+delta, 0)
+	p.xPos = min(p.xPos, xPosMax)
+
+	return old != p.xPos
 }
 
 func (p *Pager) Reset() {
@@ -100,17 +120,9 @@ func (p *Pager) String() string {
 func (p *Pager) refresh() {
 	p.buf.Reset()
 
-	lines := p.lines
-	if p.maxHeight > 0 && len(lines) > p.maxHeight {
-		lines = lines[p.yPos : p.yPos+p.maxHeight]
-	}
-
+	lines := p.visibleLines()
 	for i, line := range lines {
-		textLine := line.fixed + line.scrollable
-		if p.maxWidth > 0 && len(textLine) > p.maxWidth {
-			textLine = textLine[:p.maxWidth]
-		}
-
+		textLine := line.clamp(p.xPos, p.maxWidth)
 		if i == len(lines)-1 {
 			fmt.Fprint(&p.buf, textLine)
 		} else {
@@ -121,7 +133,31 @@ func (p *Pager) refresh() {
 	p.needsRefresh = false
 }
 
+func (p *Pager) visibleLines() []line {
+	if p.maxHeight > 0 && len(p.lines) > p.maxHeight {
+		return p.lines[p.yPos : p.yPos+p.maxHeight]
+	}
+
+	return p.lines
+}
+
 type line struct {
 	fixed      string
 	scrollable string
+}
+
+func (l line) length() int {
+	return len(l.fixed) + len(l.scrollable)
+}
+
+func (l line) clamp(xPos, maxWidth int) string {
+	scrollable := l.scrollable
+	if maxWidth > 0 {
+		if diff := len(l.fixed) + len(scrollable) - maxWidth; diff > 0 {
+			xPos := min(xPos, diff)
+			scrollable = scrollable[xPos : xPos+maxWidth-len(l.fixed)]
+		}
+	}
+
+	return l.fixed + scrollable
 }
