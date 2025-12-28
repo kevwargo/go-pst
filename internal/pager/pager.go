@@ -47,6 +47,18 @@ func (p *Pager) Down() {
 	}
 }
 
+func (p *Pager) PageUp() {
+	if p.incYPos(1 - p.maxHeight) {
+		p.needsRefresh = true
+	}
+}
+
+func (p *Pager) PageDown() {
+	if p.incYPos(p.maxHeight - 1) {
+		p.needsRefresh = true
+	}
+}
+
 func (p *Pager) incYPos(delta int) bool {
 	if p.maxHeight <= 0 || len(p.lines) <= p.maxHeight {
 		return false

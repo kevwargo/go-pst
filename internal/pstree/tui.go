@@ -142,6 +142,10 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 		t.tree.pager.Up()
 	case "down":
 		t.tree.pager.Down()
+	case "pgup":
+		t.tree.pager.PageUp()
+	case "pgdown":
+		t.tree.pager.PageDown()
 	}
 
 	return cmd
