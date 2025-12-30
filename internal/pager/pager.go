@@ -105,7 +105,7 @@ func (p *Pager) Reset() {
 	p.lines = p.lines[:0]
 }
 
-func (p *Pager) String() string {
+func (p *Pager) View() string {
 	if len(p.lines) == 0 {
 		return ""
 	}

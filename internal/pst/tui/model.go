@@ -1,4 +1,4 @@
-package pstree
+package tui
 
 import (
 	"fmt"
@@ -8,23 +8,28 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kevwargo/go-pst/internal/procwatch"
+	"github.com/kevwargo/go-pst/internal/pst/tree"
 )
 
-func runTUI(tree *Tree) error {
+type Config struct {
+	Fullscreen bool
+}
+
+func Run(cfg *Config, pst *tree.Tree) error {
 	watcher, err := procwatch.Watch()
 	if err != nil {
 		return err
 	}
 
 	var opts []tea.ProgramOption
-	if tree.cfg.Fullscreen {
+	if cfg.Fullscreen {
 		opts = append(opts, tea.WithAltScreen())
 	}
 
 	t := tui{
-		tree:       tree,
-		watcher:    watcher,
-		fullscreen: tree.cfg.Fullscreen,
+		cfg:     cfg,
+		pst:     pst,
+		watcher: watcher,
 	}
 
 	lf, err := t.openLog()
@@ -39,13 +44,13 @@ func runTUI(tree *Tree) error {
 }
 
 type tui struct {
-	tree    *Tree
+	cfg     *Config
+	pst     *tree.Tree
 	watcher procwatch.Watcher
 
-	width      int
-	height     int
-	fullscreen bool
-	quitting   bool
+	width    int
+	height   int
+	quitting bool
 }
 
 func (t *tui) Init() tea.Cmd {
@@ -72,7 +77,7 @@ func (t *tui) View() string {
 		return ""
 	}
 
-	return t.tree.render() + "\n"
+	return t.pst.View() + "\n"
 }
 
 type procMsg struct {
@@ -94,8 +99,8 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 		}
 
 		t.quitting = true
-		t.tree.pager.SetMaxHeight(0)
-		cmd := tea.Println(t.tree.render())
+		t.pst.GetPager().SetMaxHeight(0)
+		cmd := tea.Println(t.pst.View())
 
 		if msg.err != nil {
 			cmd = tea.Sequence(cmd, tea.Printf("procwatcher error: %s", msg.err.Error()))
@@ -106,17 +111,17 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 
 	switch ev := msg.event.(type) {
 	case procwatch.EventForkProc:
-		t.tree.handleNewProcess(ev)
+		t.pst.HandleNewProcess(ev)
 	case procwatch.EventForkThread:
-		t.tree.handleNewThread(ev)
+		t.pst.HandleNewThread(ev)
 	case procwatch.EventExec:
-		t.tree.handleExec(ev)
+		t.pst.HandleExec(ev)
 	case procwatch.EventComm:
-		t.tree.handleComm(ev)
+		t.pst.HandleComm(ev)
 	case procwatch.EventExitProc:
-		t.tree.handleProcessExit(ev)
+		t.pst.HandleProcessExit(ev)
 	case procwatch.EventExitThread:
-		t.tree.handleThreadExit(ev)
+		t.pst.HandleThreadExit(ev)
 	}
 
 	return nil
@@ -129,27 +134,27 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "q", "ctrl+c":
 		cmd = t.closeWatcher
 	case "d":
-		t.toggleShowDead()
+		t.pst.ToggleShowDead()
 	case "D":
-		t.cleanupDead()
+		t.pst.CleanupDead()
 	case "t":
-		t.toggleShowThreads()
+		t.pst.ToggleThreads()
 	case "f":
 		cmd = t.toggleFullscreen()
 	case "r":
 		cmd = t.forceRefresh
 	case "up":
-		t.tree.pager.Up()
+		t.pst.GetPager().Up()
 	case "down":
-		t.tree.pager.Down()
+		t.pst.GetPager().Down()
 	case "pgup":
-		t.tree.pager.PageUp()
+		t.pst.GetPager().PageUp()
 	case "pgdown":
-		t.tree.pager.PageDown()
+		t.pst.GetPager().PageDown()
 	case "left":
-		t.tree.pager.Left()
+		t.pst.GetPager().Left()
 	case "right":
-		t.tree.pager.Right()
+		t.pst.GetPager().Right()
 	}
 
 	return cmd
@@ -171,45 +176,18 @@ func (t *tui) closeWatcher() tea.Msg {
 func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
 	t.width = msg.Width
 	t.height = msg.Height
-	t.tree.pager.SetMaxWidth(msg.Width - 1)
-	t.tree.pager.SetMaxHeight(msg.Height - 1)
+	t.pst.GetPager().SetMaxWidth(msg.Width - 1)
+	t.pst.GetPager().SetMaxHeight(msg.Height - 1)
 }
 
 func (t *tui) toggleFullscreen() tea.Cmd {
-	t.fullscreen = !t.fullscreen
+	t.cfg.Fullscreen = !t.cfg.Fullscreen
 
-	if t.fullscreen {
+	if t.cfg.Fullscreen {
 		return tea.EnterAltScreen
 	}
 
 	return tea.ExitAltScreen
-}
-
-func (t *tui) toggleShowDead() {
-	t.tree.cfg.ShowDead = !t.tree.cfg.ShowDead
-	t.tree.repaint()
-}
-
-func (t *tui) toggleShowThreads() {
-	t.tree.cfg.ShowThreads = !t.tree.cfg.ShowThreads
-
-	if t.tree.cfg.ShowThreads {
-		for _, p := range t.tree.pMap {
-			p.loadThreads(t.tree.cfg)
-		}
-	} else {
-		for _, p := range t.tree.pMap {
-			p.threads = nil
-		}
-	}
-
-	t.tree.repaint()
-}
-
-func (t *tui) cleanupDead() {
-	if t.tree.cleanupDead() {
-		t.tree.repaint()
-	}
 }
 
 func (t *tui) openLog() (*os.File, error) {

@@ -3,13 +3,13 @@ package main
 import (
 	"log"
 
-	"github.com/kevwargo/go-pst/cmd/pst"
+	"github.com/kevwargo/go-pst/cmd"
 )
 
 func main() {
 	log.SetFlags(log.Flags() | log.Lmicroseconds)
 
-	if err := pst.Execute(); err != nil {
+	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
 }
