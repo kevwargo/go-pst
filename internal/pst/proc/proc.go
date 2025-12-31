@@ -32,8 +32,6 @@ type Attrs struct {
 	Args    []string
 	Workdir string
 	NSPid   []string
-
-	raw map[string]string
 }
 
 type Thread struct {
@@ -95,6 +93,18 @@ func (p *Process) Reload(cfg *Config) error {
 	return nil
 }
 
+func (p *Process) Fork(newPID int) *Process {
+	return &Process{
+		ID:       newPID,
+		ParentID: p.ID,
+		Attrs: Attrs{
+			Name:    p.Attrs.Name,
+			Args:    p.Attrs.Args,
+			Workdir: p.Attrs.Workdir,
+		},
+	}
+}
+
 func (a *Attrs) Cmdline() string {
 	if !slices.ContainsFunc(a.Args, func(a string) bool {
 		return a == "" || strings.ContainsAny(a, " \t")
@@ -113,18 +123,18 @@ func (p *Process) loadAttrs(cfg *Config) error {
 		return err
 	}
 
-	p.Attrs.raw, err = readAttrsMap(p.ID)
+	raw, err := readAttrsMap(p.ID)
 	if err != nil {
 		return err
 	}
 
-	p.ParentID, err = strconv.Atoi(p.Attrs.raw["PPid"])
+	p.ParentID, err = strconv.Atoi(raw["PPid"])
 	if err != nil {
-		return fmt.Errorf("invalid PPid %q for Pid %d: %w", p.Attrs.raw["PPid"], p.ID, err)
+		return fmt.Errorf("invalid PPid %q for Pid %d: %w", raw["PPid"], p.ID, err)
 	}
 
 	p.Attrs.Args = cmdline
-	if n, ok := p.Attrs.raw["Name"]; ok {
+	if n, ok := raw["Name"]; ok {
 		p.Attrs.Name = n
 	} else if len(cmdline) > 0 {
 		p.Attrs.Name = cmdline[0]
@@ -138,7 +148,7 @@ func (p *Process) loadAttrs(cfg *Config) error {
 	}
 
 	if cfg.NamespacePID {
-		p.Attrs.NSPid = strings.Split(p.Attrs.raw["NSpid"], "\t")
+		p.Attrs.NSPid = strings.Split(raw["NSpid"], "\t")
 	}
 
 	return nil
@@ -156,7 +166,11 @@ func (p *Process) loadThreads(cfg *Config) error {
 			return err
 		}
 
-		if err = p.loadThread(tid); err != nil {
+		if tid == p.ID {
+			continue
+		}
+
+		if err = p.LoadThread(tid); err != nil {
 			return err
 		}
 	}
@@ -164,7 +178,7 @@ func (p *Process) loadThreads(cfg *Config) error {
 	return nil
 }
 
-func (p *Process) loadThread(tid int) error {
+func (p *Process) LoadThread(tid int) error {
 	attrs, err := readAttrsMap(tid)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

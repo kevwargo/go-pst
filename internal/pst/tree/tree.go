@@ -66,19 +66,108 @@ func (t *Tree) GetPager() *pager.Pager {
 	if !t.cfg.FitTermHeight && !t.cfg.FitTermWidth {
 		t.pager.SetMaxWidth(t.cfg.Truncate)
 	} else if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {
-		t.pager.SetMaxWidth(w)
-		t.pager.SetMaxHeight(h)
+		if t.cfg.FitTermHeight {
+			t.pager.SetMaxHeight(h)
+		}
+		if t.cfg.FitTermWidth {
+			t.pager.SetMaxWidth(w)
+		}
 	}
 
 	return t.pager
 }
 
-func (t *Tree) HandleNewProcess(ev procwatch.EventForkProc)   {}
-func (t *Tree) HandleNewThread(ev procwatch.EventForkThread)  {}
-func (t *Tree) HandleExec(ev procwatch.EventExec)             {}
-func (t *Tree) HandleComm(ev procwatch.EventComm)             {}
-func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc)  {}
-func (t *Tree) HandleThreadExit(ev procwatch.EventExitThread) {}
+func (t *Tree) HandleNewProcess(ev procwatch.EventForkProc) {
+	parent := t.pMap[ev.ParentPID]
+	if parent == nil {
+		return
+	}
+
+	p := parent.Fork(ev.PID)
+	parent.Children = append(parent.Children, p)
+	t.pMap[ev.PID] = p
+
+	t.refreshMatches()
+}
+
+func (t *Tree) HandleNewThread(ev procwatch.EventForkThread) {
+	if t.cfg.PCfg.Threads {
+		if p := t.pMap[ev.PID]; p != nil {
+			p.LoadThread(ev.TID)
+			t.refreshMatches()
+		}
+	}
+}
+
+func (t *Tree) HandleExec(ev procwatch.EventExec) {
+	if p := t.pMap[ev.PID]; p != nil {
+		p.Reload(&t.cfg.PCfg)
+		t.refreshMatches()
+	}
+}
+
+func (t *Tree) HandleComm(ev procwatch.EventComm) {
+	p := t.pMap[ev.PID]
+	if p == nil {
+		return
+	}
+
+	if ev.PID == ev.TID {
+		p.Reload(&t.cfg.PCfg)
+		t.refreshMatches()
+	} else if t.cfg.PCfg.Threads {
+		for _, thr := range p.Threads {
+			if thr.ID == ev.TID && !thr.Dead {
+				thr.Name = ev.Comm
+				t.refreshView()
+				break
+			}
+		}
+	}
+}
+
+func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc) {
+	p := t.pMap[ev.PID]
+	if p == nil {
+		return
+	}
+
+	p.Exit = &proc.ExitStatus{
+		Code:   ev.ExitCode,
+		Signal: ev.ExitSignal,
+	}
+
+	delete(t.pMap, p.ID)
+
+	for _, c := range p.Children {
+		if c.Reload(&t.cfg.PCfg) != nil {
+			continue
+		}
+
+		newParent := t.pMap[c.ParentID]
+		if newParent == nil {
+			continue
+		}
+
+		newParent.Children = append(newParent.Children, c)
+	}
+
+	t.refreshMatches()
+}
+
+func (t *Tree) HandleThreadExit(ev procwatch.EventExitThread) {
+	p := t.pMap[ev.PID]
+	if p == nil {
+		return
+	}
+
+	for _, thr := range p.Threads {
+		if thr.ID == ev.TID {
+			thr.Dead = true
+			t.refreshView()
+		}
+	}
+}
 
 func (t *Tree) ToggleShowDead() {
 	t.cfg.ShowDead = !t.cfg.ShowDead
@@ -111,25 +200,51 @@ func (t *Tree) refreshView() {
 	pg := t.GetPager()
 	pg.Reset()
 
+	// TODO: sort by (descendant-count; PID) pair
+
 	for _, p := range t.top {
 		t.renderProcess(p, pg, 0)
 	}
 }
 
 func (t *Tree) renderProcess(p *proc.Process, pg *pager.Pager, level int) {
-	if p.Exit != nil && !t.cfg.ShowDead {
-		return
-	}
-
-	if t.filter != nil && t.filter.matches[p.ID] == matchNone {
+	if p.Exit != nil && !t.cfg.ShowDead || t.filter != nil && t.filter.matches[p.ID] == matchNone {
 		return
 	}
 
 	indent := strings.Repeat("  ", level)
-	pg.WriteLine(fmt.Sprintf("%s[%d] ", indent, p.ID), p.Attrs.Cmdline())
+	var exit string
+	if p.Exit != nil {
+		if p.Exit.Signal > 0 {
+			exit = fmt.Sprintf(" *s:%d*", p.Exit.Signal)
+		} else {
+			exit = fmt.Sprintf(" *e:%d*", p.Exit.Code)
+		}
+	}
+	pg.WriteLine(fmt.Sprintf("%s[%d%s] ", indent, p.ID, exit), p.Attrs.Cmdline())
+	t.renderThreads(p, pg, indent)
 
 	for _, c := range p.Children {
 		t.renderProcess(c, pg, level+1)
+	}
+}
+
+func (t *Tree) renderThreads(p *proc.Process, pg *pager.Pager, indent string) {
+	if !t.cfg.PCfg.Threads {
+		return
+	}
+
+	for _, thr := range p.Threads {
+		var dead string
+		if thr.Dead {
+			if !t.cfg.ShowDead {
+				continue
+			}
+
+			dead = " *dead*"
+		}
+
+		pg.WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.ID, dead), thr.Name)
 	}
 }
 

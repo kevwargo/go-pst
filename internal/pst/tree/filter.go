@@ -36,6 +36,7 @@ func (t *Tree) Filter(pattern string) {
 func (t *Tree) refreshMatches() {
 	// TODO: take dead into account
 
+	clear(t.filter.matches)
 	for _, p := range t.top {
 		t.matchProcess(p)
 	}
@@ -44,6 +45,10 @@ func (t *Tree) refreshMatches() {
 }
 
 func (t *Tree) matchProcess(p *proc.Process) {
+	if p.Exit != nil && !t.cfg.ShowDead {
+		return
+	}
+
 	if t.filter.fn(p) {
 		t.filter.matches[p.ID] = matchDirect
 		t.matchDescendants(p)
