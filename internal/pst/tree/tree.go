@@ -165,6 +165,7 @@ func (t *Tree) HandleThreadExit(ev procwatch.EventExitThread) {
 		if thr.ID == ev.TID {
 			thr.Dead = true
 			t.refreshView()
+			break
 		}
 	}
 }
@@ -213,15 +214,24 @@ func (t *Tree) renderProcess(p *proc.Process, pg *pager.Pager, level int) {
 	}
 
 	indent := strings.Repeat("  ", level)
+
 	var exit string
 	if p.Exit != nil {
 		if p.Exit.Signal > 0 {
-			exit = fmt.Sprintf(" *s:%d*", p.Exit.Signal)
+			exit = fmt.Sprintf("*s:%d*", p.Exit.Signal)
 		} else {
-			exit = fmt.Sprintf(" *e:%d*", p.Exit.Code)
+			exit = fmt.Sprintf("*e:%d*", p.Exit.Code)
 		}
 	}
-	pg.WriteLine(fmt.Sprintf("%s[%d%s] ", indent, p.ID, exit), p.Attrs.Cmdline())
+
+	var pid string
+	if p.Attrs.NSPid == nil {
+		pid = fmt.Sprintf("[%d]", p.ID)
+	} else {
+		pid = fmt.Sprint(p.Attrs.NSPid)
+	}
+
+	pg.WriteLine(fmt.Sprintf("%s%s%s ", indent, pid, exit), p.Attrs.Cmdline())
 	t.renderThreads(p, pg, indent)
 
 	for _, c := range p.Children {
