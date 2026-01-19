@@ -242,6 +242,12 @@ func (t *Tree) renderProcess(p *proc.Process, pg *pager.Pager, level int) {
 	)
 	t.renderThreads(p, pg, indent)
 
+	if t.cfg.PCfg.FDs {
+		for _, fd := range p.FDs {
+			pg.WriteLine(fmt.Sprintf("%s %d -> ", indent, fd.Num), fd.Link)
+		}
+	}
+
 	for _, c := range p.Children {
 		t.renderProcess(c, pg, level+1)
 	}

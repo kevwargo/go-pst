@@ -23,8 +23,13 @@ type Process struct {
 	Attrs    Attrs
 	Children []*Process // Not actually filled in this package
 	Threads  []*Thread
-	FDs      map[int]string
+	FDs      []FileDes
 	Exit     *ExitStatus
+}
+
+type FileDes struct {
+	Num  int
+	Link string
 }
 
 type Attrs struct {
@@ -199,10 +204,12 @@ func (p *Process) loadFDs(cfg *Config) error {
 		return nil
 	}
 
-	p.FDs = make(map[int]string)
-
 	for fd, err := range intDirEntries(pidPath(p.ID, "fd")) {
 		if err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return nil
+			}
+
 			return err
 		}
 
@@ -211,8 +218,10 @@ func (p *Process) loadFDs(cfg *Config) error {
 			link = fmt.Sprintf("error:[%s]", err.Error())
 		}
 
-		p.FDs[fd] = link
+		p.FDs = append(p.FDs, FileDes{Num: fd, Link: link})
 	}
+
+	slices.SortFunc(p.FDs, func(a, b FileDes) int { return a.Num - b.Num })
 
 	return nil
 }
