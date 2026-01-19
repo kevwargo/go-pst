@@ -231,7 +231,15 @@ func (t *Tree) renderProcess(p *proc.Process, pg *pager.Pager, level int) {
 		pid = fmt.Sprint(p.Attrs.NSPid)
 	}
 
-	pg.WriteLine(fmt.Sprintf("%s%s%s ", indent, pid, exit), p.Attrs.Cmdline())
+	var workdir string
+	if t.cfg.PCfg.Workdir {
+		workdir = fmt.Sprintf("{%s} ", p.Attrs.Workdir)
+	}
+
+	pg.WriteLine(
+		fmt.Sprintf("%s%s%s ", indent, pid, exit),
+		fmt.Sprintf("%s%s", workdir, p.Attrs.Cmdline()),
+	)
 	t.renderThreads(p, pg, indent)
 
 	for _, c := range p.Children {
