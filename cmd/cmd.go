@@ -23,6 +23,7 @@ func Execute() error {
 
 	fs := cmd.Flags()
 	fs.BoolVarP(&cfg.tree.PCfg.Workdir, "workdir", "w", false, "")
+	fs.BoolVarP(&cfg.tree.PCfg.UGID, "uid-gid", "u", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.NamespacePID, "namespace-pid", "N", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.Threads, "threads", "T", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.FDs, "file-descriptors", "F", false, "")

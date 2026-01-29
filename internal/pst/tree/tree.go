@@ -240,9 +240,14 @@ func (t *Tree) renderProcess(p *proc.Process, pg *pager.Pager, level int) {
 		workdir = fmt.Sprintf("{%s} ", p.Attrs.Workdir)
 	}
 
+	var ugid string
+	if t.cfg.PCfg.UGID {
+		ugid = fmt.Sprintf("[%s:%s] ", p.Attrs.Uid.ID(), p.Attrs.Gid.ID())
+	}
+
 	pg.WriteLine(
 		fmt.Sprintf("%s%s%s ", indent, pid, exit),
-		fmt.Sprintf("%s%s", workdir, p.Attrs.Cmdline()),
+		fmt.Sprintf("%s%s%s", ugid, workdir, p.Attrs.Cmdline()),
 	)
 	t.renderThreads(p, pg, indent)
 

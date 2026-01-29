@@ -12,6 +12,7 @@ import (
 
 type Config struct {
 	Workdir      bool
+	UGID         bool
 	NamespacePID bool
 	Threads      bool
 	FDs          bool
@@ -36,6 +37,8 @@ type Attrs struct {
 	Name    string
 	Args    []string
 	Workdir string
+	Uid     UGID
+	Gid     UGID
 	NSPid   []string
 }
 
@@ -153,6 +156,17 @@ func (p *Process) loadAttrs(cfg *Config) error {
 		p.Attrs.Workdir, err = os.Readlink(pidPath(p.ID, "cwd"))
 		if err != nil {
 			p.Attrs.Workdir = fmt.Sprintf("!%s", err.Error())
+		}
+	}
+
+	if cfg.UGID {
+		p.Attrs.Uid, err = parseUGID(raw["Uid"])
+		if err != nil {
+			return err
+		}
+		p.Attrs.Gid, err = parseUGID(raw["Gid"])
+		if err != nil {
+			return err
 		}
 	}
 
