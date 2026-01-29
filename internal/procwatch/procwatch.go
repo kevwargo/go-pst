@@ -67,10 +67,10 @@ func Watch() (Watcher, error) {
 }
 
 type watcher struct {
-	sock     int
-	msgCh    chan watcherMessage
-	doneCh   chan struct{}
-	doneOnce sync.Once
+	sock      int
+	msgCh     chan watcherMessage
+	doneCh    chan struct{}
+	closeOnce sync.Once
 }
 
 type watcherMessage struct {
@@ -88,6 +88,8 @@ func (w *watcher) Recv() (any, error) {
 }
 
 func (w *watcher) Close() {
-	w.doneOnce.Do(func() { close(w.doneCh) })
-	unix.Close(w.sock)
+	w.closeOnce.Do(func() {
+		close(w.doneCh)
+		unix.Close(w.sock)
+	})
 }
