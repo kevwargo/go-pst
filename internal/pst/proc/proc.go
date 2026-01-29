@@ -111,6 +111,10 @@ func (p *Process) Fork(newPID int) *Process {
 }
 
 func (a *Attrs) Cmdline() string {
+	if a.Args == nil {
+		return fmt.Sprintf("*%s*", a.Name)
+	}
+
 	if !slices.ContainsFunc(a.Args, func(a string) bool {
 		return a == "" || strings.ContainsAny(a, " \t")
 	}) {

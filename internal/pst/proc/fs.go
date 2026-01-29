@@ -53,6 +53,10 @@ func readCmdline(pid int) ([]string, error) {
 		return nil, err
 	}
 
+	if len(cmdlineRaw) == 0 {
+		return nil, nil
+	}
+
 	cmdlineBytes := bytes.Split(cmdlineRaw, []byte{0})
 	cmdline := make([]string, 0, len(cmdlineBytes)-1)
 	for i := range len(cmdlineBytes) - 1 {
