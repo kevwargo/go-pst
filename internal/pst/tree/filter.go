@@ -4,7 +4,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/pst/proc"
 )
 
@@ -34,6 +36,8 @@ func (t *Tree) Filter(pattern string) {
 }
 
 func (t *Tree) refreshMatches() {
+	defer benchmark.Record("tree.refreshMatches", time.Now())
+
 	// TODO: take dead into account
 
 	clear(t.filter.matches)

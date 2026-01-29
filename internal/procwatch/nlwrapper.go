@@ -14,8 +14,10 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
+	"github.com/kevwargo/go-pst/internal/benchmark"
 	"golang.org/x/sys/unix"
 )
 
@@ -87,29 +89,39 @@ func (w *watcher) listen() error {
 			return fmt.Errorf("receiving from nl socket: %w", err)
 		}
 
-		nlFrom, ok := from.(*unix.SockaddrNetlink)
-		if !ok {
-			return fmt.Errorf("recvfrom returned %+v which is not (*unix.SockaddrNetlink)", from)
-		}
-		if nlFrom.Pid != 0 {
-			return fmt.Errorf("recvfrom returned %+v which was not sent by kernel", nlFrom)
-		}
-
-		nlmessages, err := syscall.ParseNetlinkMessage(buf[:n])
-		if err != nil {
-			return fmt.Errorf("parsing netlink message: %w", err)
-		}
-
-		for _, nlmsg := range nlmessages {
-			switch t := nlmsgType(nlmsg.Header.Type); t {
-			case nlmsgNoop:
-			case nlmsgDone:
-				w.deliverMessage(unsafe.Pointer(&nlmsg.Data[0]))
-			default:
-				return fmt.Errorf("nlmsghdr %s: 0x%x", t, nlmsg.Data)
-			}
+		if err := w.processMessage(buf[:n], from); err != nil {
+			return err
 		}
 	}
+}
+
+func (w *watcher) processMessage(buf []byte, from unix.Sockaddr) error {
+	defer benchmark.Record("nl.processMessage", time.Now())
+
+	nlFrom, ok := from.(*unix.SockaddrNetlink)
+	if !ok {
+		return fmt.Errorf("recvfrom returned %+v which is not (*unix.SockaddrNetlink)", from)
+	}
+	if nlFrom.Pid != 0 {
+		return fmt.Errorf("recvfrom returned %+v which was not sent by kernel", nlFrom)
+	}
+
+	nlmessages, err := syscall.ParseNetlinkMessage(buf)
+	if err != nil {
+		return fmt.Errorf("parsing netlink message: %w", err)
+	}
+
+	for _, nlmsg := range nlmessages {
+		switch t := nlmsgType(nlmsg.Header.Type); t {
+		case nlmsgNoop:
+		case nlmsgDone:
+			w.deliverMessage(unsafe.Pointer(&nlmsg.Data[0]))
+		default:
+			return fmt.Errorf("nlmsghdr %s: 0x%x", t, nlmsg.Data)
+		}
+	}
+
+	return nil
 }
 
 func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {

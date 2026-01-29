@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func Register(name string, ts time.Time) {
-	dur := time.Since(ts)
+func Record(name string, ts time.Time) {
+	dur := duration(time.Since(ts))
 
 	b := benchmarks[name]
 	if b == nil {
@@ -22,7 +22,7 @@ func Register(name string, ts time.Time) {
 
 	b.sum += dur
 	b.count++
-	b.Avg = b.sum / time.Duration(b.count)
+	b.Avg = b.sum / duration(b.count)
 }
 
 func Dump() {
@@ -36,12 +36,18 @@ func Dump() {
 }
 
 type benchmark struct {
-	Min time.Duration
-	Max time.Duration
-	Avg time.Duration
+	Min duration
+	Max duration
+	Avg duration
 
-	sum   time.Duration
+	sum   duration
 	count int
+}
+
+type duration time.Duration
+
+func (d duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
 }
 
 var benchmarks = make(map[string]*benchmark)

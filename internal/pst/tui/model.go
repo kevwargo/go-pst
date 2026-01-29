@@ -5,8 +5,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/procwatch"
 	"github.com/kevwargo/go-pst/internal/pst/tree"
 )
@@ -58,6 +60,8 @@ func (t *tui) Init() tea.Cmd {
 }
 
 func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer benchmark.Record("tui.Update", time.Now())
+
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {

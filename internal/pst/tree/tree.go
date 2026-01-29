@@ -8,8 +8,10 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/term"
+	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/pager"
 	"github.com/kevwargo/go-pst/internal/procwatch"
 	"github.com/kevwargo/go-pst/internal/pst/proc"
@@ -198,6 +200,8 @@ func (t *Tree) CleanupDead() {
 }
 
 func (t *Tree) refreshView() {
+	defer benchmark.Record("tree.refreshView", time.Now())
+
 	pg := t.GetPager()
 	pg.Reset()
 
