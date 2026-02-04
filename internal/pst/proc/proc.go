@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,14 +120,22 @@ func (a *Attrs) Cmdline() string {
 	}
 
 	if !slices.ContainsFunc(a.Args, func(a string) bool {
-		return a == "" || strings.ContainsAny(a, " \t")
+		return a == "" || strings.ContainsAny(a, " \t\n")
 	}) {
 		return strings.Join(a.Args, " ")
 	}
 
-	jsonArgs, _ := json.Marshal(a.Args)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.Encode(a.Args)
 
-	return string(jsonArgs)
+	data := buf.Bytes()
+	for last := buf.Len() - 1; data[last] == '\n'; last-- {
+		data = data[:last]
+	}
+
+	return string(data)
 }
 
 func (p *Process) loadAttrs(cfg *Config) error {
