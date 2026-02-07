@@ -3,8 +3,6 @@ package tree
 import (
 	"errors"
 	"fmt"
-	"iter"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -14,11 +12,10 @@ import (
 	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/pager"
 	"github.com/kevwargo/go-pst/internal/procwatch"
-	"github.com/kevwargo/go-pst/internal/pst/proc"
 )
 
 type Config struct {
-	PCfg          proc.Config
+	PCfg          ProcConfig
 	FullMatch     bool
 	ShowDead      bool
 	Truncate      int
@@ -28,9 +25,9 @@ type Config struct {
 
 type Tree struct {
 	cfg    *Config
-	pMap   map[int]*proc.Process
+	pMap   map[int]*process
 	pager  *pager.Pager
-	top    []*proc.Process
+	top    []*process
 	filter *filter
 }
 
@@ -44,14 +41,6 @@ func Build(cfg *Config) (*Tree, error) {
 	}
 
 	return &t, nil
-}
-
-func (t *Tree) All() iter.Seq[*proc.Process] {
-	return maps.Values(t.pMap)
-}
-
-func (t *Tree) Get(pid int) *proc.Process {
-	return t.pMap[pid]
 }
 
 func (t *Tree) View() string {
@@ -80,22 +69,16 @@ func (t *Tree) GetPager() *pager.Pager {
 }
 
 func (t *Tree) HandleNewProcess(ev procwatch.EventForkProc) {
-	parent := t.pMap[ev.ParentPID]
-	if parent == nil {
-		return
+	if parent := t.pMap[ev.ParentPID]; parent != nil {
+		t.pMap[ev.PID] = parent.fork(ev.PID)
+		t.refreshMatches()
 	}
-
-	p := parent.Fork(ev.PID)
-	parent.Children = append(parent.Children, p)
-	t.pMap[ev.PID] = p
-
-	t.refreshMatches()
 }
 
 func (t *Tree) HandleNewThread(ev procwatch.EventForkThread) {
 	if t.cfg.PCfg.Threads {
 		if p := t.pMap[ev.PID]; p != nil {
-			p.LoadThread(ev.TID)
+			p.loadThread(ev.TID)
 			t.refreshMatches()
 		}
 	}
@@ -103,7 +86,7 @@ func (t *Tree) HandleNewThread(ev procwatch.EventForkThread) {
 
 func (t *Tree) HandleExec(ev procwatch.EventExec) {
 	if p := t.pMap[ev.PID]; p != nil {
-		p.Reload(&t.cfg.PCfg)
+		p.reload(&t.cfg.PCfg)
 		t.refreshMatches()
 	}
 }
@@ -115,12 +98,12 @@ func (t *Tree) HandleComm(ev procwatch.EventComm) {
 	}
 
 	if ev.PID == ev.TID {
-		p.Reload(&t.cfg.PCfg)
+		p.reload(&t.cfg.PCfg)
 		t.refreshMatches()
 	} else if t.cfg.PCfg.Threads {
-		for _, thr := range p.Threads {
-			if thr.ID == ev.TID && !thr.Dead {
-				thr.Name = ev.Comm
+		for _, thr := range p.threads {
+			if thr.id == ev.TID && !thr.dead {
+				thr.name = ev.Comm
 				t.refreshView()
 				break
 			}
@@ -134,24 +117,24 @@ func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc) {
 		return
 	}
 
-	p.Exit = &proc.ExitStatus{
-		Code:   ev.ExitCode,
-		Signal: ev.ExitSignal,
+	p.exit = &exitStatus{
+		code:   ev.ExitCode,
+		signal: ev.ExitSignal,
 	}
 
-	delete(t.pMap, p.ID)
+	delete(t.pMap, p.id)
 
-	for _, c := range p.Children {
-		if c.Reload(&t.cfg.PCfg) != nil {
+	for _, c := range p.children {
+		if c.reload(&t.cfg.PCfg) != nil {
 			continue
 		}
 
-		newParent := t.pMap[c.ParentID]
+		newParent := t.pMap[c.parentID]
 		if newParent == nil {
 			continue
 		}
 
-		newParent.Children = append(newParent.Children, c)
+		newParent.children = append(newParent.children, c)
 	}
 
 	t.refreshMatches()
@@ -163,9 +146,9 @@ func (t *Tree) HandleThreadExit(ev procwatch.EventExitThread) {
 		return
 	}
 
-	for _, thr := range p.Threads {
-		if thr.ID == ev.TID {
-			thr.Dead = true
+	for _, thr := range p.threads {
+		if thr.id == ev.TID {
+			thr.dead = true
 			t.refreshView()
 			break
 		}
@@ -184,14 +167,14 @@ func (t *Tree) ToggleThreads() {
 
 func (t *Tree) CleanupDead() {
 	for pid, p := range t.pMap {
-		p.Children = slices.DeleteFunc(p.Children, func(c *proc.Process) bool {
-			return c.Exit != nil
+		p.children = slices.DeleteFunc(p.children, func(c *process) bool {
+			return c.exit != nil
 		})
-		p.Threads = slices.DeleteFunc(p.Threads, func(t *proc.Thread) bool {
-			return t.Dead
+		p.threads = slices.DeleteFunc(p.threads, func(t *thread) bool {
+			return t.dead
 		})
 
-		if p.Exit != nil {
+		if p.exit != nil {
 			delete(t.pMap, pid)
 		}
 	}
@@ -212,64 +195,64 @@ func (t *Tree) refreshView() {
 	}
 }
 
-func (t *Tree) renderProcess(p *proc.Process, pg *pager.Pager, level int) {
-	if p.Exit != nil && !t.cfg.ShowDead || t.filter != nil && t.filter.matches[p.ID] == matchNone {
+func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
+	if p.exit != nil && !t.cfg.ShowDead || t.filter != nil && t.filter.matches[p.id] == matchNone {
 		return
 	}
 
 	indent := strings.Repeat("  ", level)
 
 	var exit string
-	if p.Exit != nil {
-		if p.Exit.Signal > 0 {
-			exit = fmt.Sprintf("*s:%d*", p.Exit.Signal)
+	if p.exit != nil {
+		if p.exit.signal > 0 {
+			exit = fmt.Sprintf("*s:%d*", p.exit.signal)
 		} else {
-			exit = fmt.Sprintf("*e:%d*", p.Exit.Code)
+			exit = fmt.Sprintf("*e:%d*", p.exit.code)
 		}
 	}
 
 	var pid string
-	if p.Attrs.NSPid == nil {
-		pid = fmt.Sprintf("[%d]", p.ID)
+	if p.attrs.nsPid == nil {
+		pid = fmt.Sprintf("[%d]", p.id)
 	} else {
-		pid = fmt.Sprint(p.Attrs.NSPid)
+		pid = fmt.Sprint(p.attrs.nsPid)
 	}
 
 	var workdir string
 	if t.cfg.PCfg.Workdir {
-		workdir = fmt.Sprintf("{%s} ", p.Attrs.Workdir)
+		workdir = fmt.Sprintf("{%s} ", p.attrs.workdir)
 	}
 
 	var ugid string
 	if t.cfg.PCfg.UGID {
-		ugid = fmt.Sprintf("[%s:%s] ", p.Attrs.Uid.ID(), p.Attrs.Gid.ID())
+		ugid = fmt.Sprintf("[%s:%s] ", p.attrs.uid.id(), p.attrs.gid.id())
 	}
 
 	pg.WriteLine(
 		fmt.Sprintf("%s%s%s ", indent, pid, exit),
-		fmt.Sprintf("%s%s%s", ugid, workdir, p.Attrs.Cmdline()),
+		fmt.Sprintf("%s%s%s", ugid, workdir, p.attrs.cmdline()),
 	)
 	t.renderThreads(p, pg, indent)
 
 	if t.cfg.PCfg.FDs {
-		for _, fd := range p.FDs {
-			pg.WriteLine(fmt.Sprintf("%s %d -> ", indent, fd.Num), fd.Link)
+		for _, fd := range p.fds {
+			pg.WriteLine(fmt.Sprintf("%s %d -> ", indent, fd.num), fd.link)
 		}
 	}
 
-	for _, c := range p.Children {
+	for _, c := range p.children {
 		t.renderProcess(c, pg, level+1)
 	}
 }
 
-func (t *Tree) renderThreads(p *proc.Process, pg *pager.Pager, indent string) {
+func (t *Tree) renderThreads(p *process, pg *pager.Pager, indent string) {
 	if !t.cfg.PCfg.Threads {
 		return
 	}
 
-	for _, thr := range p.Threads {
+	for _, thr := range p.threads {
 		var dead string
-		if thr.Dead {
+		if thr.dead {
 			if !t.cfg.ShowDead {
 				continue
 			}
@@ -277,28 +260,37 @@ func (t *Tree) renderThreads(p *proc.Process, pg *pager.Pager, indent string) {
 			dead = " *dead*"
 		}
 
-		pg.WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.ID, dead), thr.Name)
+		pg.WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.id, dead), thr.name)
 	}
 }
 
 func (t *Tree) load() error {
-	ps, err := proc.LoadAll(&t.cfg.PCfg)
-	if err != nil {
-		return err
-	}
+	t.pMap = make(map[int]*process)
 
-	t.pMap = make(map[int]*proc.Process, len(ps))
-	for _, p := range ps {
-		t.pMap[p.ID] = p
+	for pid, err := range intDirEntries(procRoot) {
+		if err != nil {
+			return err
+		}
+
+		p, err := loadProc(pid, &t.cfg.PCfg)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			return err
+		}
+
+		t.pMap[p.id] = p
 	}
 
 	t.removeSelf()
 
 	for _, p := range t.pMap {
-		if p.ParentID <= 0 {
+		if p.parentID <= 0 {
 			t.top = append(t.top, p)
-		} else if parent := t.pMap[p.ParentID]; parent != nil {
-			parent.Children = append(parent.Children, p)
+		} else if parent := t.pMap[p.parentID]; parent != nil {
+			parent.children = append(parent.children, p)
 		}
 	}
 
@@ -307,9 +299,9 @@ func (t *Tree) load() error {
 
 func (t *Tree) reload() error {
 	for _, p := range t.pMap {
-		if err := p.Reload(&t.cfg.PCfg); err != nil {
+		if err := p.reload(&t.cfg.PCfg); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				delete(t.pMap, p.ID)
+				delete(t.pMap, p.id)
 				continue
 			}
 
@@ -328,25 +320,25 @@ func (t *Tree) removeSelf() {
 		return
 	}
 
-	delete(t.pMap, p.ID)
+	delete(t.pMap, p.id)
 
-	for parent := t.pMap[p.ParentID]; isSudoAncestor(parent, p); parent = t.pMap[parent.ParentID] {
-		delete(t.pMap, parent.ID)
+	for parent := t.pMap[p.parentID]; isSudoAncestor(parent, p); parent = t.pMap[parent.parentID] {
+		delete(t.pMap, parent.id)
 	}
 }
 
-func isSudoAncestor(ancestor, descendant *proc.Process) bool {
+func isSudoAncestor(ancestor, descendant *process) bool {
 	if ancestor == nil {
 		return false
 	}
 
-	if ancestor.Attrs.Name != "sudo" {
+	if ancestor.attrs.name != "sudo" {
 		return false
 	}
 
-	if len(ancestor.Attrs.Args) < 2 {
+	if len(ancestor.attrs.args) < 2 {
 		return false
 	}
 
-	return slices.Equal(ancestor.Attrs.Args[1:], descendant.Attrs.Args)
+	return slices.Equal(ancestor.attrs.args[1:], descendant.attrs.args)
 }

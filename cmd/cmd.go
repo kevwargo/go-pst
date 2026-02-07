@@ -88,12 +88,12 @@ func execute(cfg *config, args []string) error {
 	pst.Filter(args[0])
 
 	if cfg.interactive {
-		return tui.Run(&cfg.tui, pst)
+		err = tui.Run(&cfg.tui, pst)
+	} else {
+		_, err = fmt.Println(pst.View())
 	}
 
-	fmt.Println(pst.View())
-
-	return nil
+	return err
 }
 
 func dumpProcSnapshot(path string, pst *tree.Tree) error {

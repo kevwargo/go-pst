@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/kevwargo/go-pst/internal/benchmark"
-	"github.com/kevwargo/go-pst/internal/pst/proc"
 )
 
 type filter struct {
@@ -24,7 +23,7 @@ const (
 	matchAsAncestor
 )
 
-type filterFn func(*proc.Process) bool
+type filterFn func(*process) bool
 
 func (t *Tree) Filter(pattern string) {
 	t.filter = &filter{
@@ -48,31 +47,31 @@ func (t *Tree) refreshMatches() {
 	t.refreshView()
 }
 
-func (t *Tree) matchProcess(p *proc.Process) {
-	if p.Exit != nil && !t.cfg.ShowDead {
+func (t *Tree) matchProcess(p *process) {
+	if p.exit != nil && !t.cfg.ShowDead {
 		return
 	}
 
 	if t.filter.fn(p) {
-		t.filter.matches[p.ID] = matchDirect
+		t.filter.matches[p.id] = matchDirect
 		t.matchDescendants(p)
 	} else {
-		for _, c := range p.Children {
+		for _, c := range p.children {
 			t.matchProcess(c)
 
-			if t.filter.matches[c.ID] != matchNone {
-				t.filter.matches[p.ID] = matchAsAncestor
+			if t.filter.matches[c.id] != matchNone {
+				t.filter.matches[p.id] = matchAsAncestor
 			}
 		}
 	}
 }
 
-func (t *Tree) matchDescendants(p *proc.Process) {
-	for _, c := range p.Children {
+func (t *Tree) matchDescendants(p *process) {
+	for _, c := range p.children {
 		if t.filter.fn(c) {
-			t.filter.matches[c.ID] = matchDirect
+			t.filter.matches[c.id] = matchDirect
 		} else {
-			t.filter.matches[c.ID] = matchAsDescendant
+			t.filter.matches[c.id] = matchAsDescendant
 		}
 
 		t.matchDescendants(c)
@@ -81,18 +80,18 @@ func (t *Tree) matchDescendants(p *proc.Process) {
 
 func (t *Tree) initMatchFn(pattern string) filterFn {
 	if t.cfg.FullMatch {
-		return func(p *proc.Process) bool {
-			return strings.Contains(p.Attrs.Cmdline(), pattern)
+		return func(p *process) bool {
+			return strings.Contains(p.attrs.cmdline(), pattern)
 		}
 	}
 
-	return func(p *proc.Process) bool {
-		if strconv.Itoa(p.ID) == pattern {
+	return func(p *process) bool {
+		if strconv.Itoa(p.id) == pattern {
 			// TODO: standardize this behavior, maybe with a separate flag
 			return true
 		}
 
-		return slices.ContainsFunc(p.Attrs.Args, func(a string) bool {
+		return slices.ContainsFunc(p.attrs.args, func(a string) bool {
 			return strings.Contains(a, pattern)
 		})
 	}
