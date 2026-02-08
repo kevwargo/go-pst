@@ -60,18 +60,6 @@ func (p *Pager) PageDown() {
 	}
 }
 
-func (p *Pager) incYPos(delta int) bool {
-	if p.maxHeight <= 0 || len(p.lines) <= p.maxHeight {
-		return false
-	}
-
-	old := p.yPos
-	p.yPos = max(p.yPos+delta, 0)
-	p.yPos = min(p.yPos, len(p.lines)-p.maxHeight)
-
-	return old != p.yPos
-}
-
 func (p *Pager) Left() {
 	if p.incXPos(-1) {
 		p.needsRefresh = true
@@ -82,6 +70,34 @@ func (p *Pager) Right() {
 	if p.incXPos(1) {
 		p.needsRefresh = true
 	}
+}
+
+func (p *Pager) Reset() {
+	p.lines = p.lines[:0]
+}
+
+func (p *Pager) View() string {
+	if len(p.lines) == 0 {
+		return ""
+	}
+
+	if p.needsRefresh {
+		p.refresh()
+	}
+
+	return p.buf.String()
+}
+
+func (p *Pager) incYPos(delta int) bool {
+	if p.maxHeight <= 0 || len(p.lines) <= p.maxHeight {
+		return false
+	}
+
+	old := p.yPos
+	p.yPos = max(p.yPos+delta, 0)
+	p.yPos = min(p.yPos, len(p.lines)-p.maxHeight)
+
+	return old != p.yPos
 }
 
 func (p *Pager) incXPos(delta int) bool {
@@ -99,22 +115,6 @@ func (p *Pager) incXPos(delta int) bool {
 	p.xPos = min(p.xPos, xPosMax)
 
 	return old != p.xPos
-}
-
-func (p *Pager) Reset() {
-	p.lines = p.lines[:0]
-}
-
-func (p *Pager) View() string {
-	if len(p.lines) == 0 {
-		return ""
-	}
-
-	if p.needsRefresh {
-		p.refresh()
-	}
-
-	return p.buf.String()
 }
 
 func (p *Pager) refresh() {
@@ -139,25 +139,4 @@ func (p *Pager) visibleLines() []line {
 	}
 
 	return p.lines
-}
-
-type line struct {
-	fixed      string
-	scrollable string
-}
-
-func (l line) length() int {
-	return len(l.fixed) + len(l.scrollable)
-}
-
-func (l line) clamp(xPos, maxWidth int) string {
-	scrollable := l.scrollable
-	if maxWidth > 0 {
-		if diff := len(l.fixed) + len(scrollable) - maxWidth; diff > 0 {
-			xPos := min(xPos, diff)
-			scrollable = scrollable[xPos : xPos+maxWidth-len(l.fixed)]
-		}
-	}
-
-	return l.fixed + scrollable
 }
