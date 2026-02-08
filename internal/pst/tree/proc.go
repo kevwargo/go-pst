@@ -135,6 +135,8 @@ func (p *process) loadAttrs(cfg *ProcConfig) error {
 		return fmt.Errorf("invalid PPid %q for Pid %d: %w", raw["PPid"], p.id, err)
 	}
 
+	p.attrs = attrs{}
+
 	p.attrs.args = cmdline
 	if n, ok := raw["Name"]; ok {
 		p.attrs.name = n
@@ -208,11 +210,11 @@ func (p *process) loadThread(tid int) error {
 }
 
 func (p *process) loadFDs(cfg *ProcConfig) error {
+	p.fds = nil
+
 	if !cfg.FDs {
 		return nil
 	}
-
-	p.fds = nil
 
 	for fd, err := range intDirEntries(pidPath(p.id, "fd")) {
 		if err != nil {
