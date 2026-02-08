@@ -188,15 +188,47 @@ func (t *Tree) refreshView() {
 	pg := t.GetPager()
 	pg.Reset()
 
-	// TODO: sort by (descendant-count; PID) pair
-
+	t.sort(t.top)
 	for _, p := range t.top {
 		t.renderProcess(p, pg, 0)
 	}
 }
 
+func (t *Tree) isProcVisible(p *process) bool {
+	if p.exit != nil && !t.cfg.ShowDead {
+		return false
+	}
+
+	return t.filter == nil || t.filter.matches[p.id] != matchNone
+}
+
+func (t *Tree) sort(ps []*process) int {
+	weights := make(map[int]int)
+	totalWeight := 0
+
+	for _, p := range ps {
+		if !t.isProcVisible(p) {
+			continue
+		}
+
+		w := t.sort(p.children)
+		weights[p.id] = w
+		totalWeight += w + 1
+	}
+
+	slices.SortFunc(ps, func(a, b *process) int {
+		if diff := weights[a.id] - weights[b.id]; diff != 0 {
+			return diff
+		}
+
+		return a.id - b.id
+	})
+
+	return totalWeight
+}
+
 func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
-	if p.exit != nil && !t.cfg.ShowDead || t.filter != nil && t.filter.matches[p.id] == matchNone {
+	if !t.isProcVisible(p) {
 		return
 	}
 
@@ -265,6 +297,22 @@ func (t *Tree) renderThreads(p *process, pg *pager.Pager, indent string) {
 }
 
 func (t *Tree) load() error {
+	if err := t.loadPMap(); err != nil {
+		return err
+	}
+
+	for _, p := range t.pMap {
+		if p.parentID <= 0 {
+			t.top = append(t.top, p)
+		} else if parent := t.pMap[p.parentID]; parent != nil {
+			parent.children = append(parent.children, p)
+		}
+	}
+
+	return nil
+}
+
+func (t *Tree) loadPMap() error {
 	t.pMap = make(map[int]*process)
 
 	for pid, err := range intDirEntries(procRoot) {
@@ -285,14 +333,6 @@ func (t *Tree) load() error {
 	}
 
 	t.removeSelf()
-
-	for _, p := range t.pMap {
-		if p.parentID <= 0 {
-			t.top = append(t.top, p)
-		} else if parent := t.pMap[p.parentID]; parent != nil {
-			parent.children = append(parent.children, p)
-		}
-	}
 
 	return nil
 }
@@ -332,13 +372,8 @@ func isSudoAncestor(ancestor, descendant *process) bool {
 		return false
 	}
 
-	if ancestor.attrs.name != "sudo" {
-		return false
-	}
-
-	if len(ancestor.attrs.args) < 2 {
-		return false
-	}
-
-	return slices.Equal(ancestor.attrs.args[1:], descendant.attrs.args)
+	return slices.Equal(
+		ancestor.attrs.args,
+		append([]string{"sudo"}, descendant.attrs.args...),
+	)
 }
