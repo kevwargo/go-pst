@@ -49,20 +49,21 @@ func newWatcher() (*watcher, error) {
 
 func (w *watcher) initListen() error {
 	header := unix.NlMsghdr{
-		Len:   uint32(C.sizeof_struct_nlmsghdr + C.sizeof_struct_cn_msg + C.sizeof_enum_proc_cn_mcast_op),
 		Type:  uint16(unix.NLMSG_DONE),
 		Flags: 0,
 		Seq:   0,
 		Pid:   uint32(os.Getpid()),
 	}
-	cnhdr := &C.struct_cn_msg{
-		id:  C.struct_cb_id{idx: C.CN_IDX_PROC, val: C.CN_VAL_PROC},
-		len: C.__u16(C.sizeof_enum_proc_cn_mcast_op),
-	}
+	header.Len += uint32(C.sizeof_struct_nlmsghdr)
+
+	cnhdr := &C.struct_cn_msg{id: C.struct_cb_id{idx: C.CN_IDX_PROC, val: C.CN_VAL_PROC}}
+	header.Len += uint32(C.sizeof_struct_cn_msg)
+
 	var op C.enum_proc_cn_mcast_op = C.PROC_CN_MCAST_LISTEN
+	header.Len += uint32(C.sizeof_enum_proc_cn_mcast_op)
+	cnhdr.len = C.__u16(C.sizeof_enum_proc_cn_mcast_op)
 
 	buf := bytes.NewBuffer(make([]byte, 0, header.Len))
-
 	binary.Write(buf, binary.LittleEndian, header)
 	binary.Write(buf, binary.LittleEndian, cnhdr)
 	binary.Write(buf, binary.LittleEndian, op)
@@ -86,7 +87,7 @@ func (w *watcher) listen() error {
 	for {
 		n, from, err := unix.Recvfrom(w.sock, buf, 0)
 		if err != nil {
-			return fmt.Errorf("receiving from nl socket: %w", err)
+			return fmt.Errorf("receiving from nl socket: %w (%+v)", err, err)
 		}
 
 		if err := w.processMessage(buf[:n], from); err != nil {
