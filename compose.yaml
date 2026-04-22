@@ -1,0 +1,17 @@
+services:
+  builder:
+    image: golang:1.25
+    volumes:
+      - .:/src
+      - go-cache:/cache
+      - /usr/local/bin:/host-bin
+    environment:
+      GOMODCACHE: /cache/gomodcache
+      GOCACHE: /cache/gocache
+      GOPATH: /cache/gopath
+      BINDIR: /host-bin
+      GO_OPTS: "-buildvcs=false"
+    working_dir: /src
+
+volumes:
+  go-cache:
