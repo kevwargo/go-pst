@@ -40,6 +40,7 @@ type attrs struct {
 	workdir string
 	uid     ugid
 	gid     ugid
+	state   byte
 	nsPid   []string
 }
 
@@ -142,6 +143,10 @@ func (p *process) loadAttrs(cfg *ProcConfig) error {
 		p.attrs.name = n
 	} else if len(cmdline) > 0 {
 		p.attrs.name = cmdline[0]
+	}
+
+	if s, ok := raw["State"]; ok {
+		p.attrs.state = s[0]
 	}
 
 	if cfg.Workdir {

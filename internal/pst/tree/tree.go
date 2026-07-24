@@ -122,6 +122,11 @@ func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc) {
 		signal: ev.ExitSignal,
 	}
 
+	// For cleanly exited process, this returns NotFound error and we just ignore it.
+	// For the case when `p` became a zombie, this succeeds so the later render
+	// properly shows the Z state.
+	p.loadAttrs(&t.cfg.PCfg)
+
 	delete(t.pMap, p.id)
 
 	for _, c := range p.children {
@@ -241,6 +246,9 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 		} else {
 			exit = fmt.Sprintf("*e:%d*", p.exit.code)
 		}
+	}
+	if p.attrs.state == 'Z' {
+		exit += "Z"
 	}
 
 	var pid string
