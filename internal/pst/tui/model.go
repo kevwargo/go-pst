@@ -3,7 +3,7 @@ package tui
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/procwatch"
 	"github.com/kevwargo/go-pst/internal/pst/tree"
@@ -19,18 +19,13 @@ func Run(cfg *Config, pst *tree.Tree) error {
 		return err
 	}
 
-	var opts []tea.ProgramOption
-	if cfg.Fullscreen {
-		opts = append(opts, tea.WithAltScreen())
-	}
-
 	t := tui{
 		cfg:     cfg,
 		pst:     pst,
 		watcher: watcher,
 	}
 
-	_, err = tea.NewProgram(&t, opts...).Run()
+	_, err = tea.NewProgram(&t).Run()
 
 	return err
 }
@@ -66,12 +61,11 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return t, tea.Sequence(cmd, t.recvMsg)
 }
 
-func (t *tui) View() string {
-	if t.quitting {
-		return ""
-	}
+func (t *tui) View() tea.View {
+	v := tea.NewView(t.pst.View() + "\n")
+	v.AltScreen = t.cfg.Fullscreen
 
-	return t.pst.View() + "\n"
+	return v
 }
 
 type procMsg struct {
@@ -141,7 +135,7 @@ func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "t":
 		t.pst.ToggleThreads()
 	case "f":
-		cmd = t.toggleFullscreen()
+		t.toggleFullscreen()
 	case "r":
 		cmd = t.forceRefresh
 	case "up":
@@ -181,12 +175,6 @@ func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
 	t.pst.GetPager().SetMaxHeight(msg.Height - 1)
 }
 
-func (t *tui) toggleFullscreen() tea.Cmd {
+func (t *tui) toggleFullscreen() {
 	t.cfg.Fullscreen = !t.cfg.Fullscreen
-
-	if t.cfg.Fullscreen {
-		return tea.EnterAltScreen
-	}
-
-	return tea.ExitAltScreen
 }
