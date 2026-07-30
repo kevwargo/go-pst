@@ -90,7 +90,9 @@ func execute(cfg *config, args []string) error {
 	if cfg.interactive {
 		err = tui.Run(&cfg.tui, pst)
 	} else {
-		_, err = fmt.Println(pst.View())
+		if view := pst.View(); view != "" {
+			_, err = fmt.Println(view)
+		}
 	}
 
 	return err

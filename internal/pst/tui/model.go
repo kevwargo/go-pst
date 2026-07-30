@@ -98,19 +98,7 @@ func (t *tui) recvMsg() tea.Msg {
 
 func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 	if msg.event == nil {
-		if t.quitting {
-			return nil
-		}
-
-		t.quitting = true
-		t.pst.GetPager().SetMaxHeight(0)
-		cmd := tea.Println(t.pst.View())
-
-		if msg.err != nil {
-			cmd = tea.Sequence(cmd, tea.Printf("procwatcher error: %s", msg.err.Error()))
-		}
-
-		return tea.Sequence(cmd, tea.Quit)
+		return t.handleQuitMsg(msg.err)
 	}
 
 	switch ev := msg.event.(type) {
@@ -129,6 +117,25 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 	}
 
 	return nil
+}
+
+func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
+	if t.quitting {
+		return nil
+	}
+
+	t.quitting = true
+	t.pst.GetPager().SetMaxHeight(0)
+
+	if view := t.pst.View(); view != "" {
+		cmd = tea.Println(view)
+	}
+
+	if procWatchErr != nil {
+		cmd = tea.Sequence(cmd, tea.Printf("procwatcher error: %s", procWatchErr.Error()))
+	}
+
+	return tea.Sequence(cmd, tea.Quit)
 }
 
 func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
@@ -200,7 +207,7 @@ func (t *tui) openLog() (*os.File, error) {
 		return nil, err
 	}
 
-	lf, err := os.OpenFile(filepath.Join(cacheDir, "pst.log"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	lf, err := os.OpenFile(filepath.Join(cacheDir, "pst.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return nil, fmt.Errorf("opening log file: %w", err)
 	}
