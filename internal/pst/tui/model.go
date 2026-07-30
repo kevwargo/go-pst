@@ -1,10 +1,6 @@
 package tui
 
 import (
-	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,12 +29,6 @@ func Run(cfg *Config, pst *tree.Tree) error {
 		pst:     pst,
 		watcher: watcher,
 	}
-
-	lf, err := t.openLog()
-	if err != nil {
-		return err
-	}
-	defer lf.Close()
 
 	_, err = tea.NewProgram(&t, opts...).Run()
 
@@ -199,20 +189,4 @@ func (t *tui) toggleFullscreen() tea.Cmd {
 	}
 
 	return tea.ExitAltScreen
-}
-
-func (t *tui) openLog() (*os.File, error) {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
-	}
-
-	lf, err := os.OpenFile(filepath.Join(cacheDir, "pst.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
-	if err != nil {
-		return nil, fmt.Errorf("opening log file: %w", err)
-	}
-
-	log.SetOutput(lf)
-
-	return lf, nil
 }

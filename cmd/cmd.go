@@ -4,12 +4,16 @@ import (
 	"fmt"
 
 	"github.com/kevwargo/go-pst/internal/benchmark"
+	"github.com/kevwargo/go-pst/internal/logging"
 	"github.com/kevwargo/go-pst/internal/pst/tree"
 	"github.com/kevwargo/go-pst/internal/pst/tui"
 	"github.com/spf13/cobra"
 )
 
 func Execute() error {
+	closeLog := logging.Init()
+	defer closeLog()
+
 	var cfg config
 
 	cmd := &cobra.Command{

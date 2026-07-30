@@ -2,7 +2,7 @@ package benchmark
 
 import (
 	"encoding/json"
-	"os"
+	"log"
 	"sync"
 	"time"
 )
@@ -18,9 +18,12 @@ func Dump() {
 		return
 	}
 
-	enc := json.NewEncoder(os.Stderr)
-	enc.SetIndent("", "  ")
-	enc.Encode(benchmarks)
+	buf, err := json.MarshalIndent(benchmarks, "", "  ")
+	if err != nil {
+		log.Printf("Benchmarks encode error: %s", err)
+	} else {
+		log.Printf("Benchmarks: %s", string(buf))
+	}
 }
 
 func record(name string, ts time.Time) {
