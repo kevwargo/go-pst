@@ -1,5 +1,10 @@
 ## Bugs
 
+### Processes disappear in interactive mode
+
+Sometimes (hard to catch, happened a few times when bash internally executed completion commands)
+when `--show-dead` is enabled some processes appear for a fraction of a second and then disappear.
+
 ### Reparented process is shown multiple times
 ```
 [1] /usr/lib/systemd/systemd --switched-root --system --deserialize=46
