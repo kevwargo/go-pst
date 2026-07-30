@@ -3,11 +3,31 @@ package benchmark
 import (
 	"encoding/json"
 	"os"
+	"sync"
 	"time"
 )
 
-func Record(name string, ts time.Time) {
+var Record = func(name string, ts time.Time) {}
+
+func Enable() {
+	Record = record
+}
+
+func Dump() {
+	if len(benchmarks) == 0 {
+		return
+	}
+
+	enc := json.NewEncoder(os.Stderr)
+	enc.SetIndent("", "  ")
+	enc.Encode(benchmarks)
+}
+
+func record(name string, ts time.Time) {
 	dur := duration(time.Since(ts))
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	b := benchmarks[name]
 	if b == nil {
@@ -25,16 +45,6 @@ func Record(name string, ts time.Time) {
 	b.Avg = b.sum / duration(b.count)
 }
 
-func Dump() {
-	if len(benchmarks) == 0 {
-		return
-	}
-
-	enc := json.NewEncoder(os.Stderr)
-	enc.SetIndent("", "  ")
-	enc.Encode(benchmarks)
-}
-
 type benchmark struct {
 	Min duration
 	Max duration
@@ -50,4 +60,7 @@ func (d duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
-var benchmarks = make(map[string]*benchmark)
+var (
+	benchmarks = make(map[string]*benchmark)
+	mu         sync.Mutex
+)

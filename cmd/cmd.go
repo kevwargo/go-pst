@@ -55,6 +55,8 @@ type config struct {
 
 func execute(cfg *config, args []string) error {
 	if cfg.showBenchmarks {
+		benchmark.Enable()
+
 		defer benchmark.Dump()
 	}
 
