@@ -87,7 +87,12 @@ func (w *watcher) listen() error {
 	for {
 		n, from, err := unix.Recvfrom(w.sock, buf, 0)
 		if err != nil {
-			return fmt.Errorf("receiving from nl socket: %w (%+v)", err, err)
+			var errno string
+			if se, ok := errors.AsType[syscall.Errno](err); ok {
+				errno = fmt.Sprintf("errno: %d", se)
+			}
+
+			return fmt.Errorf("receiving from nl socket: %w %s", err, errno)
 		}
 
 		if err := w.processMessage(buf[:n], from); err != nil {
@@ -128,7 +133,7 @@ func (w *watcher) processMessage(buf []byte, from unix.Sockaddr) error {
 func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {
 	cnhdr := (*C.struct_cn_msg)(nlmsgDataPtr)
 	procEvent := (*C.struct_proc_event)(
-		unsafe.Pointer(uintptr(unsafe.Pointer(cnhdr)) + unsafe.Sizeof(*cnhdr)),
+		unsafe.Add(unsafe.Pointer(cnhdr), unsafe.Sizeof(*cnhdr)),
 	)
 	evType := procEventType(procEvent.what)
 	dataPtr := unsafe.Pointer(&procEvent.event_data)
