@@ -87,12 +87,12 @@ func (w *watcher) listen() error {
 	for {
 		n, from, err := unix.Recvfrom(w.sock, buf, 0)
 		if err != nil {
-			var errno string
-			if se, ok := errors.AsType[syscall.Errno](err); ok {
-				errno = fmt.Sprintf("errno: %d", se)
+			var errName string
+			if errno, ok := errors.AsType[syscall.Errno](err); ok {
+				errName = fmt.Sprintf(" (%s %d)", unix.ErrnoName(errno), errno)
 			}
 
-			return fmt.Errorf("receiving from nl socket: %w %s", err, errno)
+			return fmt.Errorf("receiving from nl socket: %w%s", err, errName)
 		}
 
 		if err := w.processMessage(buf[:n], from); err != nil {
