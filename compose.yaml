@@ -1,6 +1,6 @@
 services:
   builder:
-    image: golang:1.25
+    image: golang:1.26
     volumes:
       - .:/src
       - go-cache:/cache
