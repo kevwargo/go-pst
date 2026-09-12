@@ -11,9 +11,6 @@ import (
 )
 
 func Execute() error {
-	closeLog := logging.Init()
-	defer closeLog()
-
 	var cfg config
 
 	cmd := &cobra.Command{
@@ -21,6 +18,11 @@ func Execute() error {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(_ *cobra.Command, args []string) error {
+			if cfg.interactive {
+				revertLogging := logging.Redirect()
+				defer revertLogging()
+			}
+
 			return execute(&cfg, args)
 		},
 	}
