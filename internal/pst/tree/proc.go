@@ -19,6 +19,7 @@ type ProcConfig struct {
 	Threads      bool
 	FDs          bool
 	PathEnv      bool
+	MemoryUsage  bool
 }
 
 type process struct {
@@ -45,6 +46,7 @@ type attrs struct {
 	state          byte
 	nsPid          []string
 	pathEnvEntries []string
+	memUsage       memUsage
 }
 
 type thread struct {
@@ -179,6 +181,8 @@ func (p *process) loadAttrs(cfg *ProcConfig) error {
 			return err
 		}
 	}
+
+	p.attrs.memUsage.load(raw)
 
 	return nil
 }

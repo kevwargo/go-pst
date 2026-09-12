@@ -34,6 +34,7 @@ func Execute() error {
 	fs.BoolVarP(&cfg.tree.PCfg.Threads, "threads", "T", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.FDs, "file-descriptors", "F", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.PathEnv, "path-env", "P", false, "")
+	fs.BoolVarP(&cfg.tree.PCfg.MemoryUsage, "memory-usage", "M", false, "")
 	fs.BoolVarP(&cfg.tree.ShowDead, "show-dead", "D", false, "")
 	fs.BoolVarP(&cfg.tree.FullMatch, "full-match", "f", false, "")
 
