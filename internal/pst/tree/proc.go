@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type ProcConfig struct {
@@ -17,6 +18,7 @@ type ProcConfig struct {
 	NamespacePID bool
 	Threads      bool
 	FDs          bool
+	PathEnv      bool
 }
 
 type process struct {
@@ -35,13 +37,14 @@ type fileDes struct {
 }
 
 type attrs struct {
-	name    string
-	args    []string
-	workdir string
-	uid     ugid
-	gid     ugid
-	state   byte
-	nsPid   []string
+	name           string
+	args           []string
+	workdir        string
+	uid            ugid
+	gid            ugid
+	state          byte
+	nsPid          []string
+	pathEnvEntries []string
 }
 
 type thread struct {
@@ -169,6 +172,33 @@ func (p *process) loadAttrs(cfg *ProcConfig) error {
 
 	if cfg.NamespacePID {
 		p.attrs.nsPid = strings.Split(raw["NSpid"], "\t")
+	}
+
+	if cfg.PathEnv {
+		if err := p.loadPathEnv(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *process) loadPathEnv() error {
+	envs, err := readEnv(p.id)
+	if err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+
+		return err
+	}
+
+	visited := make(map[string]bool)
+	for _, e := range strings.Split(envs["PATH"], ":") {
+		if !visited[e] {
+			p.attrs.pathEnvEntries = append(p.attrs.pathEnvEntries, e)
+			visited[e] = true
+		}
 	}
 
 	return nil

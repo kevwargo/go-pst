@@ -48,22 +48,49 @@ func intDirEntries(path string) iter.Seq2[int, error] {
 }
 
 func readCmdline(pid int) ([]string, error) {
-	cmdlineRaw, err := os.ReadFile(pidPath(pid, "cmdline"))
+	return readStrings(pidPath(pid, "cmdline"))
+}
+
+func readEnv(pid int) (map[string]string, error) {
+	entries, err := readStrings(pidPath(pid, "environ"))
 	if err != nil {
 		return nil, err
 	}
 
-	if len(cmdlineRaw) == 0 {
+	envs := make(map[string]string)
+	for _, e := range entries {
+		parts := strings.SplitN(e, "=", 2)
+		name := parts[0]
+		var value string
+		if len(parts) > 1 {
+			value = parts[1]
+		}
+
+		envs[name] = value
+	}
+
+	return envs, nil
+}
+
+func readStrings(filename string) ([]string, error) {
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	raw = bytes.Trim(raw, "\000")
+
+	if len(raw) == 0 {
 		return nil, nil
 	}
 
-	cmdlineBytes := bytes.Split(cmdlineRaw, []byte{0})
-	cmdline := make([]string, 0, len(cmdlineBytes)-1)
-	for i := range len(cmdlineBytes) - 1 {
-		cmdline = append(cmdline, string(cmdlineBytes[i]))
+	parts := bytes.Split(raw, []byte{0})
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		result = append(result, string(p))
 	}
 
-	return cmdline, nil
+	return result, nil
 }
 
 func readAttrsMap(pid int) (map[string]string, error) {
