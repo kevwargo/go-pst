@@ -11,9 +11,6 @@ import (
 )
 
 func Execute() error {
-	closeLog := logging.Init()
-	defer closeLog()
-
 	var cfg config
 
 	cmd := &cobra.Command{
@@ -21,6 +18,11 @@ func Execute() error {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(_ *cobra.Command, args []string) error {
+			if cfg.interactive {
+				revertLogging := logging.Redirect()
+				defer revertLogging()
+			}
+
 			return execute(&cfg, args)
 		},
 	}
@@ -31,6 +33,8 @@ func Execute() error {
 	fs.BoolVarP(&cfg.tree.PCfg.NamespacePID, "namespace-pid", "N", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.Threads, "threads", "T", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.FDs, "file-descriptors", "F", false, "")
+	fs.BoolVarP(&cfg.tree.PCfg.PathEnv, "path-env", "P", false, "")
+	fs.BoolVarP(&cfg.tree.PCfg.MemoryUsage, "memory-usage", "M", false, "")
 	fs.BoolVarP(&cfg.tree.ShowDead, "show-dead", "D", false, "")
 	fs.BoolVarP(&cfg.tree.FullMatch, "full-match", "f", false, "")
 

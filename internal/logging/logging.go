@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 )
 
-func Init() func() {
+func Init() {
 	log.SetFlags(log.Flags() | log.Lmicroseconds)
+}
 
+func Redirect() func() {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		log.Println(err.Error())
@@ -21,7 +23,11 @@ func Init() func() {
 		return func() {}
 	}
 
+	w := log.Writer()
 	log.SetOutput(lf)
 
-	return func() { lf.Close() }
+	return func() {
+		lf.Close()
+		log.SetOutput(w)
+	}
 }

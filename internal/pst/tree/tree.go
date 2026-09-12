@@ -268,9 +268,19 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 		ugid = fmt.Sprintf("[%s:%s] ", p.attrs.uid.id(), p.attrs.gid.id())
 	}
 
+	var pathEnv string
+	if t.cfg.PCfg.PathEnv {
+		pathEnv = strings.Join(p.attrs.pathEnvEntries, ":") + " "
+	}
+
+	var mem string
+	if t.cfg.PCfg.MemoryUsage {
+		mem = p.attrs.memUsage.render() + " "
+	}
+
 	pg.WriteLine(
 		fmt.Sprintf("%s%s%s ", indent, pid, exit),
-		fmt.Sprintf("%s%s%s", ugid, workdir, p.attrs.cmdline()),
+		fmt.Sprintf("%s%s%s%s%s", mem, pathEnv, ugid, workdir, p.attrs.cmdline()),
 	)
 	t.renderThreads(p, pg, indent)
 
