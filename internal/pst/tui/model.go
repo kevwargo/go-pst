@@ -8,6 +8,7 @@ import (
 	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/procwatch"
 	"github.com/kevwargo/go-pst/internal/pst/tree"
+	"github.com/kevwargo/go-pst/internal/pst/tui/keymap"
 )
 
 type Config struct {
@@ -35,13 +36,30 @@ type tui struct {
 	cfg     *Config
 	pst     *tree.Tree
 	watcher procwatch.Watcher
+	keymap  *keymap.Keymap
 
 	width    int
 	height   int
+	showHelp bool
 	quitting bool
 }
 
 func (t *tui) Init() tea.Cmd {
+	t.keymap = keymap.New().
+		AddCmd("q", "Close program", t.closeWatcher).
+		AddCmd("r", "Force refresh window size", t.forceRefresh).
+		AddFunc("?", "Toggle help", func() { t.showHelp = !t.showHelp }).
+		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
+		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
+		AddFunc("t", "Cleanup dead", t.pst.ToggleThreads).
+		AddFunc("f", "Toggle fullscreen", func() { t.cfg.Fullscreen = !t.cfg.Fullscreen }).
+		AddFunc("up", "Up 1 line", func() { t.pst.GetPager().Up() }).
+		AddFunc("down", "Down 1 line", func() { t.pst.GetPager().Down() }).
+		AddFunc("pgup", "Up 1 page", func() { t.pst.GetPager().PageUp() }).
+		AddFunc("pgdown", "Down 1 page", func() { t.pst.GetPager().PageDown() }).
+		AddFunc("left", "Left 1 char", func() { t.pst.GetPager().Left() }).
+		AddFunc("right", "Right 1 char", func() { t.pst.GetPager().Right() })
+
 	return t.recvMsg
 }
 
@@ -52,7 +70,7 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		cmd = t.handleKey(msg)
+		cmd = t.keymap.HandleKey(msg)
 	case tea.WindowSizeMsg:
 		t.handleWinSize(msg)
 	case procMsg:
@@ -67,6 +85,11 @@ func (t *tui) View() tea.View {
 	if v.Content != "" && !strings.HasSuffix(v.Content, "\n") {
 		v.SetContent(v.Content + "\n")
 	}
+
+	if t.showHelp {
+		v.SetContent(v.Content + t.keymap.Help())
+	}
+
 	v.AltScreen = t.cfg.Fullscreen
 
 	return v
@@ -122,39 +145,6 @@ func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
 	return tea.Sequence(cmd, tea.Quit)
 }
 
-func (t *tui) handleKey(msg tea.KeyMsg) tea.Cmd {
-	var cmd tea.Cmd
-
-	switch k := msg.String(); k {
-	case "q", "ctrl+c":
-		cmd = t.closeWatcher
-	case "d":
-		t.pst.ToggleShowDead()
-	case "D":
-		t.pst.CleanupDead()
-	case "t":
-		t.pst.ToggleThreads()
-	case "f":
-		t.toggleFullscreen()
-	case "r":
-		cmd = t.forceRefresh
-	case "up":
-		t.pst.GetPager().Up()
-	case "down":
-		t.pst.GetPager().Down()
-	case "pgup":
-		t.pst.GetPager().PageUp()
-	case "pgdown":
-		t.pst.GetPager().PageDown()
-	case "left":
-		t.pst.GetPager().Left()
-	case "right":
-		t.pst.GetPager().Right()
-	}
-
-	return cmd
-}
-
 func (t *tui) forceRefresh() tea.Msg {
 	return tea.WindowSizeMsg{
 		Width:  t.width,
@@ -173,8 +163,4 @@ func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
 	t.height = msg.Height
 	t.pst.GetPager().SetMaxWidth(msg.Width - 1)
 	t.pst.GetPager().SetMaxHeight(msg.Height - 1)
-}
-
-func (t *tui) toggleFullscreen() {
-	t.cfg.Fullscreen = !t.cfg.Fullscreen
 }
