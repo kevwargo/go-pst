@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -62,7 +63,10 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *tui) View() tea.View {
-	v := tea.NewView(t.pst.View() + "\n")
+	v := tea.NewView(t.pst.View())
+	if v.Content != "" && !strings.HasSuffix(v.Content, "\n") {
+		v.SetContent(v.Content + "\n")
+	}
 	v.AltScreen = t.cfg.Fullscreen
 
 	return v
@@ -110,10 +114,6 @@ func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
 
 	t.quitting = true
 	t.pst.GetPager().SetMaxHeight(0)
-
-	if view := t.pst.View(); view != "" {
-		cmd = tea.Println(view)
-	}
 
 	if procWatchErr != nil {
 		cmd = tea.Sequence(cmd, tea.Printf("procwatcher error: %s", procWatchErr.Error()))
