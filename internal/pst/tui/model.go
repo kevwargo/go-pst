@@ -47,18 +47,18 @@ type tui struct {
 func (t *tui) Init() tea.Cmd {
 	t.keymap = keymap.New().
 		AddCmd("q", "Close program", t.closeWatcher).
-		AddCmd("r", "Force refresh window size", t.forceRefresh).
+		AddCmd("r", "Force adjust to window size", t.adjustWinSize).
 		AddFunc("?", "Toggle help", func() { t.showHelp = !t.showHelp }).
 		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
 		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
-		AddFunc("t", "Cleanup dead", t.pst.ToggleThreads).
+		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
 		AddFunc("f", "Toggle fullscreen", func() { t.cfg.Fullscreen = !t.cfg.Fullscreen }).
 		AddFunc("up", "Up 1 line", func() { t.pst.GetPager().Up() }).
 		AddFunc("down", "Down 1 line", func() { t.pst.GetPager().Down() }).
 		AddFunc("pgup", "Up 1 page", func() { t.pst.GetPager().PageUp() }).
 		AddFunc("pgdown", "Down 1 page", func() { t.pst.GetPager().PageDown() }).
-		AddFunc("left", "Left 1 char", func() { t.pst.GetPager().Left() }).
-		AddFunc("right", "Right 1 char", func() { t.pst.GetPager().Right() })
+		AddFunc("left", "Left 5 chars", func() { t.pst.GetPager().Left(5) }).
+		AddFunc("right", "Right 5 chars", func() { t.pst.GetPager().Right(5) })
 
 	return t.recvMsg
 }
@@ -145,7 +145,7 @@ func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
 	return tea.Sequence(cmd, tea.Quit)
 }
 
-func (t *tui) forceRefresh() tea.Msg {
+func (t *tui) adjustWinSize() tea.Msg {
 	return tea.WindowSizeMsg{
 		Width:  t.width,
 		Height: t.height,

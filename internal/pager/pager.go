@@ -60,14 +60,14 @@ func (p *Pager) PageDown() {
 	}
 }
 
-func (p *Pager) Left() {
-	if p.incXPos(-1) {
+func (p *Pager) Left(delta uint) {
+	if p.incXPos(-int(delta)) {
 		p.needsRefresh = true
 	}
 }
 
-func (p *Pager) Right() {
-	if p.incXPos(1) {
+func (p *Pager) Right(delta uint) {
+	if p.incXPos(int(delta)) {
 		p.needsRefresh = true
 	}
 }

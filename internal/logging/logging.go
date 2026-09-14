@@ -26,6 +26,8 @@ func Redirect() func() {
 	w := log.Writer()
 	log.SetOutput(lf)
 
+	log.Printf("Started. PID: %d", os.Getpid())
+
 	return func() {
 		lf.Close()
 		log.SetOutput(w)

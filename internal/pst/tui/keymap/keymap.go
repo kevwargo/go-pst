@@ -22,25 +22,24 @@ func New() *Keymap {
 }
 
 func (km *Keymap) AddCmd(key, description string, cmd tea.Cmd) *Keymap {
-	if cmd == nil {
-		return km
+	if cmd != nil {
+		km.addEntry(key, entry{
+			description: description,
+			cmd:         cmd,
+		})
 	}
 
-	return km.addEntry(key, entry{
-		description: description,
-		cmd:         cmd,
-	})
+	return km
 }
 
 func (km *Keymap) AddFunc(key, description string, fn func()) *Keymap {
-	if fn == nil {
-		return km
+	if fn != nil {
+		km.addEntry(key, entry{
+			description: description,
+			fn:          fn,
+		})
 	}
-
-	return km.addEntry(key, entry{
-		description: description,
-		fn:          fn,
-	})
+	return km
 }
 
 func (km *Keymap) HandleKey(key tea.KeyMsg) tea.Cmd {
@@ -53,7 +52,10 @@ func (km *Keymap) HandleKey(key tea.KeyMsg) tea.Cmd {
 		return e.cmd
 	}
 
-	e.fn()
+	if e.fn != nil {
+		// safe-guard, shouldn't happen
+		e.fn()
+	}
 
 	return nil
 }
@@ -65,10 +67,10 @@ func (km *Keymap) Help() string {
 		bindings = append(bindings, b)
 	}
 
-	return help.New().ShortHelpView(bindings)
+	return help.New().FullHelpView([][]key.Binding{bindings})
 }
 
-func (km *Keymap) addEntry(key string, e entry) *Keymap {
+func (km *Keymap) addEntry(key string, e entry) {
 	km.keys = append(km.keys, key)
 
 	if km.m == nil {
@@ -76,6 +78,4 @@ func (km *Keymap) addEntry(key string, e entry) *Keymap {
 	}
 
 	km.m[key] = e
-
-	return km
 }
