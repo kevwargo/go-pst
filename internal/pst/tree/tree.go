@@ -142,6 +142,7 @@ func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc) {
 		newParent.children = append(newParent.children, c)
 	}
 
+	p.children = nil
 	t.refreshMatches()
 }
 
@@ -204,7 +205,7 @@ func (t *Tree) isProcVisible(p *process) bool {
 		return false
 	}
 
-	return t.filter == nil || t.filter.matches[p.id] != matchNone
+	return t.filter == nil || t.filter.matches[p.id] != noMatch
 }
 
 func (t *Tree) sort(ps []*process) int {

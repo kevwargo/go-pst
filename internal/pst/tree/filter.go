@@ -10,14 +10,14 @@ import (
 )
 
 type filter struct {
-	fn      filterFn
+	apply   filterFn
 	matches map[int]matchType
 }
 
 type matchType int
 
 const (
-	matchNone matchType = iota
+	noMatch matchType = iota
 	matchDirect
 	matchAsDescendant
 	matchAsAncestor
@@ -27,7 +27,7 @@ type filterFn func(*process) bool
 
 func (t *Tree) Filter(pattern string) {
 	t.filter = &filter{
-		fn:      t.initMatchFn(pattern),
+		apply:   t.initMatchFn(pattern),
 		matches: make(map[int]matchType),
 	}
 
@@ -52,14 +52,14 @@ func (t *Tree) matchProcess(p *process) {
 		return
 	}
 
-	if t.filter.fn(p) {
+	if t.filter.apply(p) {
 		t.filter.matches[p.id] = matchDirect
 		t.matchDescendants(p)
 	} else {
 		for _, c := range p.children {
 			t.matchProcess(c)
 
-			if t.filter.matches[c.id] != matchNone {
+			if t.filter.matches[c.id] != noMatch {
 				t.filter.matches[p.id] = matchAsAncestor
 			}
 		}
@@ -68,7 +68,7 @@ func (t *Tree) matchProcess(p *process) {
 
 func (t *Tree) matchDescendants(p *process) {
 	for _, c := range p.children {
-		if t.filter.fn(c) {
+		if t.filter.apply(c) {
 			t.filter.matches[c.id] = matchDirect
 		} else {
 			t.filter.matches[c.id] = matchAsDescendant
