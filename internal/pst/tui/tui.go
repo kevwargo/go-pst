@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -77,11 +78,13 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = t.keymap.HandleKey(msg)
 	case tea.WindowSizeMsg:
 		t.handleWinSize(msg)
-	case procMsg:
+	case procwatch.Message:
 		cmd = t.handleProcMsg(msg)
+	case reloadSuccessMsg:
+		// nothing, just some non-nil message to trigger Update()->View()->render cycle
 	}
 
-	return t, tea.Sequence(cmd, t.recvMsg)
+	return t, cmd
 }
 
 func (t *tui) View() (v tea.View) {
@@ -95,30 +98,36 @@ func (t *tui) View() (v tea.View) {
 	}
 
 	v.Cursor = tea.NewCursor(0, 0)
+	v.Cursor.Blink = false
 
 	v.AltScreen = t.cfg.Fullscreen
 
 	return v
 }
 
-type procMsg struct {
-	event any
-	err   error
-}
-
 func (t *tui) recvMsg() tea.Msg {
-	var msg procMsg
-	msg.event, msg.err = t.watcher.Recv()
-
-	return msg
+	return t.watcher.Recv(2 * time.Second)
 }
 
-func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
-	if msg.event == nil {
-		return t.handleQuitMsg(msg.err)
+func reprMsg(msg tea.Msg) string {
+	s := fmt.Sprintf("%T(%+v)", msg, msg)
+	if len(s) > 100 {
+		s = s[:100]
 	}
 
-	switch ev := msg.event.(type) {
+	return s
+}
+
+func (t *tui) handleProcMsg(msg procwatch.Message) tea.Cmd {
+	if msg.EOF || msg.Err != nil {
+		return t.handleQuitMsg(msg.Err)
+	}
+
+	if msg.Timeout {
+		return tea.Sequence(t.reload, t.recvMsg)
+	}
+
+	switch ev := msg.Event.(type) {
 	case procwatch.EventForkProc:
 		t.pst.HandleNewProcess(ev)
 	case procwatch.EventForkThread:
@@ -133,10 +142,10 @@ func (t *tui) handleProcMsg(msg procMsg) tea.Cmd {
 		t.pst.HandleThreadExit(ev)
 	}
 
-	return nil
+	return t.recvMsg
 }
 
-func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
+func (t *tui) handleQuitMsg(procWatchErr error) tea.Cmd {
 	if t.quitting {
 		return nil
 	}
@@ -145,10 +154,10 @@ func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
 	t.pst.GetPager().SetMaxHeight(0)
 
 	if procWatchErr != nil {
-		cmd = tea.Sequence(cmd, tea.Printf("procwatcher error: %s", procWatchErr.Error()))
+		t.err = errors.Join(t.err, fmt.Errorf("procwatcher error: %w", procWatchErr))
 	}
 
-	return tea.Sequence(cmd, tea.Quit)
+	return tea.Quit
 }
 
 func (t *tui) reload() tea.Msg {

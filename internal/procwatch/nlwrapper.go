@@ -42,7 +42,7 @@ func newWatcher() (*watcher, error) {
 
 	return &watcher{
 		sock:   sock,
-		msgCh:  make(chan watcherMessage, chanSize),
+		msgCh:  make(chan Message, chanSize),
 		doneCh: make(chan struct{}),
 	}, nil
 }
@@ -142,25 +142,25 @@ func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {
 	case procEventFork:
 		data := (*C.struct_fork_proc_event)(dataPtr)
 		if data.child_pid == data.child_tgid {
-			w.msgCh <- watcherMessage{ev: EventForkProc{
+			w.msgCh <- Message{Event: EventForkProc{
 				PID:       int(data.child_tgid),
 				ParentPID: int(data.parent_tgid),
 			}}
 		} else {
-			w.msgCh <- watcherMessage{ev: EventForkThread{
+			w.msgCh <- Message{Event: EventForkThread{
 				PID: int(data.child_tgid),
 				TID: int(data.child_pid),
 			}}
 		}
 	case procEventExec:
 		data := (*C.struct_exec_proc_event)(dataPtr)
-		w.msgCh <- watcherMessage{ev: EventExec{
+		w.msgCh <- Message{Event: EventExec{
 			PID: int(data.process_tgid),
 			TID: int(data.process_pid),
 		}}
 	case procEventComm:
 		data := (*C.struct_comm_proc_event)(dataPtr)
-		w.msgCh <- watcherMessage{ev: EventComm{
+		w.msgCh <- Message{Event: EventComm{
 			PID:  int(data.process_tgid),
 			TID:  int(data.process_pid),
 			Comm: C.GoString(&data.comm[0]),
@@ -168,12 +168,12 @@ func (w *watcher) deliverMessage(nlmsgDataPtr unsafe.Pointer) {
 	case procEventExit:
 		data := (*C.struct_exit_proc_event)(dataPtr)
 		if data.parent_pid == 0 && data.parent_tgid == 0 {
-			w.msgCh <- watcherMessage{ev: EventExitThread{
+			w.msgCh <- Message{Event: EventExitThread{
 				PID: int(data.process_tgid),
 				TID: int(data.process_pid),
 			}}
 		} else {
-			w.msgCh <- watcherMessage{ev: EventExitProc{
+			w.msgCh <- Message{Event: EventExitProc{
 				PID:       int(data.process_tgid),
 				ParentPID: int(data.parent_tgid),
 

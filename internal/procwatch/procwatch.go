@@ -2,6 +2,7 @@ package procwatch
 
 import (
 	"sync"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -40,8 +41,15 @@ type EventExitThread struct {
 }
 
 type Watcher interface {
-	Recv() (any, error)
+	Recv(timeout time.Duration) Message
 	Close()
+}
+
+type Message struct {
+	Event   any
+	Err     error
+	Timeout bool
+	EOF     bool
 }
 
 func Watch() (Watcher, error) {
@@ -59,7 +67,7 @@ func Watch() (Watcher, error) {
 
 		err := w.listen()
 		if err != nil {
-			w.msgCh <- watcherMessage{err: err}
+			w.msgCh <- Message{Err: err}
 		}
 	}()
 
@@ -68,22 +76,26 @@ func Watch() (Watcher, error) {
 
 type watcher struct {
 	sock      int
-	msgCh     chan watcherMessage
+	msgCh     chan Message
 	doneCh    chan struct{}
 	closeOnce sync.Once
 }
 
-type watcherMessage struct {
-	ev  any
-	err error
-}
+func (w *watcher) Recv(timeout time.Duration) Message {
+	var tc <-chan time.Time
+	if timeout <= 0 {
+		tc = make(chan time.Time, 1)
+	} else {
+		tc = time.After(timeout)
+	}
 
-func (w *watcher) Recv() (any, error) {
 	select {
 	case msg := <-w.msgCh:
-		return msg.ev, msg.err
+		return msg
+	case <-tc:
+		return Message{Timeout: true}
 	case <-w.doneCh:
-		return nil, nil
+		return Message{EOF: true}
 	}
 }
 
