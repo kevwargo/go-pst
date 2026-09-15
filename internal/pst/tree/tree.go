@@ -47,6 +47,16 @@ func (t *Tree) View() string {
 	return t.GetPager().View()
 }
 
+func (t *Tree) Reload() error {
+	if err := t.load(); err != nil {
+		return err
+	}
+
+	t.refreshMatches()
+
+	return nil
+}
+
 func (t *Tree) GetPager() *pager.Pager {
 	if t.pager != nil {
 		return t.pager
@@ -320,6 +330,7 @@ func (t *Tree) load() error {
 		return err
 	}
 
+	t.top = nil
 	for _, p := range t.pMap {
 		if p.parentID <= 0 {
 			t.top = append(t.top, p)

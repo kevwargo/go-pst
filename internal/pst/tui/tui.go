@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -27,9 +28,10 @@ func Run(cfg *Config, pst *tree.Tree) error {
 		watcher: watcher,
 	}
 
-	_, err = tea.NewProgram(&t).Run()
+	p := tea.NewProgram(&t)
+	_, err = p.Run()
 
-	return err
+	return errors.Join(err, t.err)
 }
 
 type tui struct {
@@ -41,13 +43,15 @@ type tui struct {
 	width    int
 	height   int
 	showHelp bool
+	err      error
 	quitting bool
 }
 
 func (t *tui) Init() tea.Cmd {
 	t.keymap = keymap.New().
 		AddCmd("q", "Close program", t.closeWatcher).
-		AddCmd("r", "Force adjust to window size", t.adjustWinSize).
+		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
+		AddCmd("r", "Reload whole tree", t.reload).
 		AddFunc("?", "Toggle help", func() { t.showHelp = !t.showHelp }).
 		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
 		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
@@ -80,8 +84,8 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return t, tea.Sequence(cmd, t.recvMsg)
 }
 
-func (t *tui) View() tea.View {
-	v := tea.NewView(t.pst.View())
+func (t *tui) View() (v tea.View) {
+	v.SetContent(t.pst.View())
 	if v.Content != "" && !strings.HasSuffix(v.Content, "\n") {
 		v.SetContent(v.Content + "\n")
 	}
@@ -89,6 +93,8 @@ func (t *tui) View() tea.View {
 	if t.showHelp {
 		v.SetContent(v.Content + t.keymap.Help())
 	}
+
+	v.Cursor = tea.NewCursor(0, 0)
 
 	v.AltScreen = t.cfg.Fullscreen
 
@@ -144,6 +150,18 @@ func (t *tui) handleQuitMsg(procWatchErr error) (cmd tea.Cmd) {
 
 	return tea.Sequence(cmd, tea.Quit)
 }
+
+func (t *tui) reload() tea.Msg {
+	if err := t.pst.Reload(); err != nil {
+		t.err = err
+
+		return t.closeWatcher()
+	}
+
+	return reloadSuccessMsg{}
+}
+
+type reloadSuccessMsg struct{}
 
 func (t *tui) adjustWinSize() tea.Msg {
 	return tea.WindowSizeMsg{
