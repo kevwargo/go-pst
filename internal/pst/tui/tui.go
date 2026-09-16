@@ -50,20 +50,22 @@ type tui struct {
 
 func (t *tui) Init() tea.Cmd {
 	t.keymap = keymap.New().
-		AddCmd("q", "Close program", t.closeWatcher).
+		AddCmd("ctrl+c", "Close program", t.closeWatcher, "q", "esc").
 		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
 		AddCmd("r", "Reload whole tree", t.reload).
-		AddFunc("?", "Toggle help", func() { t.showHelp = !t.showHelp }).
+		AddFunc("?", "Toggle help", t.toggleHelp, "h").
 		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
 		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
 		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
-		AddFunc("f", "Toggle fullscreen", func() { t.cfg.Fullscreen = !t.cfg.Fullscreen }).
-		AddFunc("up", "Up 1 line", func() { t.pst.GetPager().Up() }).
-		AddFunc("down", "Down 1 line", func() { t.pst.GetPager().Down() }).
-		AddFunc("pgup", "Up 1 page", func() { t.pst.GetPager().PageUp() }).
-		AddFunc("pgdown", "Down 1 page", func() { t.pst.GetPager().PageDown() }).
-		AddFunc("left", "Left 5 chars", func() { t.pst.GetPager().Left(5) }).
-		AddFunc("right", "Right 5 chars", func() { t.pst.GetPager().Right(5) })
+		AddFunc("f", "Toggle fullscreen", t.toggleFullscreen).
+		AddFunc("up", "Up 1 line", t.pagerUp).
+		AddFunc("down", "Down 1 line", t.pagerDown).
+		AddFunc("pgup", "Up 1 page", t.pagerPgup).
+		AddFunc("pgdown", "Down 1 page", t.pagerPgdown).
+		AddFunc("left", "Left 5 chars", t.pagerLeft(5)).
+		AddFunc("right", "Right 5 chars", t.pagerRight(5)).
+		AddFunc(",", "Left 1 char", t.pagerLeft(1)).
+		AddFunc(".", "Right 1 char", t.pagerRight(1))
 
 	return t.recvMsg
 }
@@ -109,15 +111,6 @@ func (t *tui) recvMsg() tea.Msg {
 	return t.watcher.Recv(2 * time.Second)
 }
 
-func reprMsg(msg tea.Msg) string {
-	s := fmt.Sprintf("%T(%+v)", msg, msg)
-	if len(s) > 100 {
-		s = s[:100]
-	}
-
-	return s
-}
-
 func (t *tui) handleProcMsg(msg procwatch.Message) tea.Cmd {
 	if msg.EOF || msg.Err != nil {
 		return t.handleQuitMsg(msg.Err)
@@ -158,6 +151,38 @@ func (t *tui) handleQuitMsg(procWatchErr error) tea.Cmd {
 	}
 
 	return tea.Quit
+}
+
+func (t *tui) toggleHelp() {
+	t.showHelp = !t.showHelp
+}
+
+func (t *tui) toggleFullscreen() {
+	t.cfg.Fullscreen = !t.cfg.Fullscreen
+}
+
+func (t *tui) pagerUp() {
+	t.pst.GetPager().Up()
+}
+
+func (t *tui) pagerDown() {
+	t.pst.GetPager().Down()
+}
+
+func (t *tui) pagerPgup() {
+	t.pst.GetPager().PageUp()
+}
+
+func (t *tui) pagerPgdown() {
+	t.pst.GetPager().PageDown()
+}
+
+func (t *tui) pagerLeft(delta uint) func() {
+	return func() { t.pst.GetPager().Left(delta) }
+}
+
+func (t *tui) pagerRight(delta uint) func() {
+	return func() { t.pst.GetPager().Right(delta) }
 }
 
 func (t *tui) reload() tea.Msg {

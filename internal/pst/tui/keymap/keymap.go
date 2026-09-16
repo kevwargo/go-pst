@@ -1,17 +1,20 @@
 package keymap
 
 import (
+	"slices"
+	"strings"
+
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
 
 type Keymap struct {
-	m    map[string]entry
-	keys []string
+	bindings []binding
 }
 
-type entry struct {
+type binding struct {
+	keys        []string
 	description string
 	cmd         tea.Cmd
 	fn          func()
@@ -21,9 +24,10 @@ func New() *Keymap {
 	return &Keymap{}
 }
 
-func (km *Keymap) AddCmd(key, description string, cmd tea.Cmd) *Keymap {
+func (km *Keymap) AddCmd(key, description string, cmd tea.Cmd, additionalKeys ...string) *Keymap {
 	if cmd != nil {
-		km.addEntry(key, entry{
+		km.bindings = append(km.bindings, binding{
+			keys:        append([]string{key}, additionalKeys...),
 			description: description,
 			cmd:         cmd,
 		})
@@ -32,50 +36,42 @@ func (km *Keymap) AddCmd(key, description string, cmd tea.Cmd) *Keymap {
 	return km
 }
 
-func (km *Keymap) AddFunc(key, description string, fn func()) *Keymap {
+func (km *Keymap) AddFunc(key, description string, fn func(), additionalKeys ...string) *Keymap {
 	if fn != nil {
-		km.addEntry(key, entry{
+		km.bindings = append(km.bindings, binding{
+			keys:        append([]string{key}, additionalKeys...),
 			description: description,
 			fn:          fn,
 		})
 	}
+
 	return km
 }
 
 func (km *Keymap) HandleKey(key tea.KeyMsg) tea.Cmd {
-	e, ok := km.m[key.String()]
-	if !ok {
-		return nil
-	}
+	for _, b := range km.bindings {
+		if slices.Contains(b.keys, key.String()) {
+			if b.cmd != nil {
+				return b.cmd
+			}
 
-	if e.cmd != nil {
-		return e.cmd
-	}
+			if b.fn != nil {
+				b.fn()
+			}
 
-	if e.fn != nil {
-		// safe-guard, shouldn't happen
-		e.fn()
+			break
+		}
 	}
 
 	return nil
 }
 
 func (km *Keymap) Help() string {
-	bindings := make([]key.Binding, 0, len(km.m))
-	for _, k := range km.keys {
-		b := key.NewBinding(key.WithKeys(k), key.WithHelp(k, km.m[k].description))
-		bindings = append(bindings, b)
+	bindings := make([]key.Binding, 0, len(km.bindings))
+	for _, b := range km.bindings {
+		binding := key.NewBinding(key.WithKeys(b.keys...), key.WithHelp(strings.Join(b.keys, " | "), b.description))
+		bindings = append(bindings, binding)
 	}
 
 	return help.New().FullHelpView([][]key.Binding{bindings})
-}
-
-func (km *Keymap) addEntry(key string, e entry) {
-	km.keys = append(km.keys, key)
-
-	if km.m == nil {
-		km.m = make(map[string]entry)
-	}
-
-	km.m[key] = e
 }
