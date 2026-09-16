@@ -140,7 +140,7 @@ func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc) {
 	delete(t.pMap, p.id)
 
 	for _, c := range p.children {
-		if c.reload(&t.cfg.PCfg) != nil {
+		if err := c.reload(&t.cfg.PCfg); err != nil {
 			continue
 		}
 
