@@ -50,14 +50,6 @@ type tui struct {
 
 func (t *tui) Init() tea.Cmd {
 	t.keymap = keymap.New().
-		AddCmd("ctrl+c", "Close program", t.closeWatcher, "q", "esc").
-		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
-		AddCmd("r", "Reload whole tree", t.reload).
-		AddFunc("?", "Toggle help", t.toggleHelp, "h").
-		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
-		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
-		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
-		AddFunc("f", "Toggle fullscreen", t.toggleFullscreen).
 		AddFunc("up", "Up 1 line", t.pagerUp).
 		AddFunc("down", "Down 1 line", t.pagerDown).
 		AddFunc("pgup", "Up 1 page", t.pagerPgup).
@@ -65,7 +57,17 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("left", "Left 5 chars", t.pagerLeft(5)).
 		AddFunc("right", "Right 5 chars", t.pagerRight(5)).
 		AddFunc(",", "Left 1 char", t.pagerLeft(1)).
-		AddFunc(".", "Right 1 char", t.pagerRight(1))
+		AddFunc(".", "Right 1 char", t.pagerRight(1)).
+		NewGroup().
+		AddFunc("?", "Toggle help", t.toggleHelp, "h").
+		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
+		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
+		AddFunc("f", "Toggle fullscreen", t.toggleFullscreen).
+		NewGroup().
+		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
+		AddCmd("r", "Reload whole tree", t.reload).
+		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
+		AddCmd("ctrl+c", "Close program", t.closeWatcher, "q", "esc")
 
 	return t.recvMsg
 }
@@ -99,9 +101,7 @@ func (t *tui) View() (v tea.View) {
 		v.SetContent(v.Content + t.keymap.Help())
 	}
 
-	v.Cursor = tea.NewCursor(0, 0)
-	v.Cursor.Blink = false
-
+	v.Cursor = &tea.Cursor{Shape: tea.CursorBlock}
 	v.AltScreen = t.cfg.Fullscreen
 
 	return v
