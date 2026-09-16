@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -25,10 +26,12 @@ func Redirect() func() {
 
 	w := log.Writer()
 	log.SetOutput(lf)
+	log.SetPrefix(fmt.Sprintf("[PID %d] ", os.Getpid()))
 
-	log.Printf("Started. PID: %d", os.Getpid())
+	log.Printf("Started.")
 
 	return func() {
+		log.Printf("Closing...")
 		lf.Close()
 		log.SetOutput(w)
 	}
