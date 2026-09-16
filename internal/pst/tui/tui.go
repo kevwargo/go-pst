@@ -95,6 +95,7 @@ func (t *tui) View() (v tea.View) {
 	}
 
 	v.Cursor = tea.NewCursor(0, 0)
+	v.Cursor.Blink = false
 
 	v.AltScreen = t.cfg.Fullscreen
 
