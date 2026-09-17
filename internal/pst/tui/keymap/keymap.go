@@ -1,11 +1,13 @@
 package keymap
 
 import (
+	"encoding/json"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
 	bubblekey "charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -13,11 +15,6 @@ type Keymap struct {
 	layout   [][]bubblekey.Binding
 	bindings map[string]*action
 	newGroup bool
-}
-
-type action struct {
-	cmd tea.Cmd
-	fn  func()
 }
 
 func New() *Keymap {
@@ -68,9 +65,10 @@ func (km *Keymap) addAction(key, description string, act *action, additionalKeys
 		km.bindings[k] = act
 	}
 
+	keysJSON, _ := json.Marshal(keys)
 	binding := bubblekey.NewBinding(
 		bubblekey.WithKeys(keys...),
-		bubblekey.WithHelp(strings.Join(keys, " | "), description),
+		bubblekey.WithHelp(string(keysJSON), description),
 	)
 
 	if km.newGroup || len(km.layout) == 0 {
@@ -83,8 +81,34 @@ func (km *Keymap) addAction(key, description string, act *action, additionalKeys
 
 func (km *Keymap) Help() string {
 	h := help.New()
-	h.Styles.FullKey = h.Styles.FullKey.Foreground(ansi.BrightGreen).Bold(true)
+	h.Styles.FullKey = lipgloss.NewStyle().Transform(transformKey)
 	h.Styles.FullDesc = h.Styles.FullDesc.Foreground(ansi.BrightBlue).Bold(true)
 
 	return h.FullHelpView(km.layout)
 }
+
+func transformKey(src string) string {
+	var lines []string
+
+	for _, line := range strings.Split(src, "\n") {
+		var keys []string
+		if err := json.Unmarshal([]byte(line), &keys); err != nil {
+			lines = append(lines, line)
+		} else {
+			for i := range keys {
+				keys[i] = keyHelpStyle.Render(keys[i])
+			}
+
+			lines = append(lines, strings.Join(keys, "|"))
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+type action struct {
+	cmd tea.Cmd
+	fn  func()
+}
+
+var keyHelpStyle = lipgloss.NewStyle().Foreground(ansi.BrightGreen).Bold(true)
