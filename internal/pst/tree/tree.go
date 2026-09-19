@@ -3,6 +3,7 @@ package tree
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -132,27 +133,27 @@ func (t *Tree) HandleProcessExit(ev procwatch.EventExitProc) {
 		signal: ev.ExitSignal,
 	}
 
-	// For cleanly exited process, this returns NotFound error and we just ignore it.
-	// For the case when `p` became a zombie, this succeeds so the later render
-	// properly shows the Z state.
-	p.loadAttrs(&t.cfg.PCfg)
-
-	delete(t.pMap, p.id)
-
-	for _, c := range p.children {
-		if err := c.reload(&t.cfg.PCfg); err != nil {
-			continue
-		}
-
-		newParent := t.pMap[c.parentID]
-		if newParent == nil {
-			continue
-		}
-
-		newParent.children = append(newParent.children, c)
+	if t.cfg.PCfg.matchDebug(p) {
+		log.Printf("exit %d: p:%p exit:%p", p.id, p, p.exit)
 	}
 
-	p.children = nil
+	// When `p` is exited and properly reaped, this returns NotFound error and we just ignore it.
+	// When `p` is a zombie, this succeeds and sets the state as Z which is later rendered.
+	p.loadAttrs(&t.cfg.PCfg)
+
+	p.children = slices.DeleteFunc(p.children, func(c *process) bool {
+		if err := c.reload(&t.cfg.PCfg); err != nil {
+			return false
+		}
+
+		if pp := t.pMap[c.parentID]; pp != nil && pp.id != p.id {
+			pp.children = append(pp.children, c)
+			return true
+		}
+
+		return false
+	})
+
 	t.refreshMatches()
 }
 
@@ -251,15 +252,15 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 	indent := strings.Repeat("  ", level)
 
 	var exit string
-	if p.exit != nil {
+
+	if p.attrs.isZombie() {
+		exit = "Z"
+	} else if p.exit != nil {
 		if p.exit.signal > 0 {
 			exit = fmt.Sprintf("*s:%d*", p.exit.signal)
 		} else {
 			exit = fmt.Sprintf("*e:%d*", p.exit.code)
 		}
-	}
-	if p.attrs.state == 'Z' {
-		exit += "Z"
 	}
 
 	var pid string
@@ -326,55 +327,68 @@ func (t *Tree) renderThreads(p *process, pg *pager.Pager, indent string) {
 }
 
 func (t *Tree) load() error {
-	if err := t.loadPMap(); err != nil {
+	newPMap, err := loadPMap(&t.cfg.PCfg)
+	if err != nil {
 		return err
+	}
+
+	if t.pMap == nil {
+		t.pMap = newPMap
+	} else {
+		t.mergePMap(newPMap)
 	}
 
 	t.top = nil
 	for _, p := range t.pMap {
 		if p.parentID <= 0 {
 			t.top = append(t.top, p)
-		} else if parent := t.pMap[p.parentID]; parent != nil {
-			parent.children = append(parent.children, p)
+		} else if pp := t.pMap[p.parentID]; pp != nil {
+			if !slices.ContainsFunc(pp.children, func(c *process) bool {
+				return c.id == p.id
+			}) {
+				pp.children = append(pp.children, p)
+			}
 		}
 	}
 
 	return nil
 }
 
-func (t *Tree) loadPMap() error {
-	t.pMap = make(map[int]*process)
+func (t *Tree) mergePMap(newPMap map[int]*process) {
+	for pid, old := range t.pMap {
+		p, ok := newPMap[pid]
 
-	for pid, err := range intDirEntries(procRoot) {
-		if err != nil {
-			return err
+		if t.cfg.PCfg.matchDebug(old) {
+			log.Printf("merge %d: present:%v old:%p new:%p, exit:%p", pid, ok, old, p, old.exit)
 		}
 
-		p, err := loadProc(pid, &t.cfg.PCfg)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
+		if !ok {
+			old.attrs.state = "" // reset zombie state
+			if old.exit == nil {
+				old.exit = &exitStatus{code: -1}
 			}
-
-			return err
+		} else {
+			t.pMap[pid] = p
+			if old.exit != nil {
+				if p.attrs.isZombie() {
+					p.exit = old.exit
+				} else {
+					log.Printf("PID %d most probably recycled - old:%p new:%p", old, p)
+				}
+			}
 		}
-
-		t.pMap[p.id] = p
 	}
 
-	t.removeSelf()
-
-	return nil
+	for pid, p := range newPMap {
+		if _, ok := t.pMap[pid]; !ok {
+			t.pMap[pid] = p
+		}
+	}
 }
 
 func (t *Tree) reload() error {
 	for _, p := range t.pMap {
-		if err := p.reload(&t.cfg.PCfg); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				delete(t.pMap, p.id)
-				continue
-			}
-
+		if err := p.reload(&t.cfg.PCfg); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
@@ -382,28 +396,4 @@ func (t *Tree) reload() error {
 	t.refreshMatches()
 
 	return nil
-}
-
-func (t *Tree) removeSelf() {
-	p := t.pMap[os.Getpid()]
-	if p == nil {
-		return
-	}
-
-	delete(t.pMap, p.id)
-
-	for parent := t.pMap[p.parentID]; isSudoAncestor(parent, p); parent = t.pMap[parent.parentID] {
-		delete(t.pMap, parent.id)
-	}
-}
-
-func isSudoAncestor(ancestor, descendant *process) bool {
-	if ancestor == nil {
-		return false
-	}
-
-	return slices.Equal(
-		ancestor.attrs.args,
-		append([]string{"sudo"}, descendant.attrs.args...),
-	)
 }

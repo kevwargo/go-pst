@@ -48,6 +48,8 @@ func Execute() error {
 
 	fs.BoolVar(&cfg.showBenchmarks, "benchmarks", false, "")
 
+	fs.StringSliceVar(&cfg.tree.PCfg.DebugCmdline, "debug-cmd", nil, "Comma separated cmdline to debug")
+
 	return cmd.Execute()
 }
 

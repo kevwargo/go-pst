@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -22,6 +23,16 @@ type ProcConfig struct {
 	FDs          bool
 	PathEnv      bool
 	MemoryUsage  bool
+
+	DebugCmdline []string
+}
+
+func (c *ProcConfig) matchDebug(p *process) bool {
+	if c.DebugCmdline == nil {
+		return false
+	}
+
+	return slices.Equal(p.attrs.args, c.DebugCmdline)
 }
 
 type process struct {
@@ -45,7 +56,7 @@ type attrs struct {
 	workdir        string
 	uid            ugid.UGID
 	gid            ugid.UGID
-	state          byte
+	state          string
 	nsPid          []string
 	pathEnvEntries []string
 	memUsage       memUsage
@@ -82,6 +93,10 @@ func (p *process) reload(cfg *ProcConfig) error {
 
 	if err := p.loadFDs(cfg); err != nil {
 		return err
+	}
+
+	if cfg.matchDebug(p) {
+		log.Printf("(re)loaded %d at %p", p.id, p)
 	}
 
 	return nil
@@ -127,6 +142,10 @@ func (a *attrs) cmdline() string {
 	return string(data)
 }
 
+func (a *attrs) isZombie() bool {
+	return strings.HasPrefix(a.state, "Z")
+}
+
 func (p *process) loadAttrs(cfg *ProcConfig) error {
 	cmdline, err := readCmdline(p.id)
 	if err != nil {
@@ -152,9 +171,7 @@ func (p *process) loadAttrs(cfg *ProcConfig) error {
 		p.attrs.name = cmdline[0]
 	}
 
-	if s, ok := raw["State"]; ok {
-		p.attrs.state = s[0]
-	}
+	p.attrs.state = raw["State"]
 
 	if cfg.Workdir {
 		p.attrs.workdir, err = os.Readlink(pidPath(p.id, "cwd"))
