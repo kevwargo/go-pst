@@ -276,7 +276,7 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 
 	var ugid string
 	if t.cfg.PCfg.UGID {
-		ugid = fmt.Sprintf("[%s:%s] ", p.attrs.uid.id(), p.attrs.gid.id())
+		ugid = fmt.Sprintf("[%s:%s] ", p.attrs.uid.ID(), p.attrs.gid.ID())
 	}
 
 	var pathEnv string

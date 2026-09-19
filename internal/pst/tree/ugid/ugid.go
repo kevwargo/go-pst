@@ -1,4 +1,4 @@
-package tree
+package ugid
 
 import (
 	"fmt"
@@ -6,28 +6,11 @@ import (
 	"strings"
 )
 
-type ugid interface {
-	id() string
+type UGID interface {
+	ID() string
 }
 
-type scalarUGID int
-
-func (s scalarUGID) id() string {
-	return strconv.Itoa(int(s))
-}
-
-type multiUGID struct {
-	real       int
-	effective  int
-	savedSet   int
-	filesystem int
-}
-
-func (m multiUGID) id() string {
-	return fmt.Sprintf("(r:%d e:%d ss:%d fs:%d)", m.real, m.effective, m.savedSet, m.filesystem)
-}
-
-func parseUGID(raw string) (_ ugid, err error) {
+func Parse(raw string) (_ UGID, err error) {
 	parts := strings.Split(raw, "\t")
 	if len(parts) != ugidFieldsCount {
 		return nil, fmt.Errorf("invalid UGID %q: wrong number of fields, expected %d", raw, ugidFieldsCount)
@@ -53,6 +36,23 @@ func parseUGID(raw string) (_ ugid, err error) {
 		savedSet:   values[2],
 		filesystem: values[3],
 	}, nil
+}
+
+type scalarUGID int
+
+func (s scalarUGID) ID() string {
+	return strconv.Itoa(int(s))
+}
+
+type multiUGID struct {
+	real       int
+	effective  int
+	savedSet   int
+	filesystem int
+}
+
+func (m multiUGID) ID() string {
+	return fmt.Sprintf("(r:%d e:%d ss:%d fs:%d)", m.real, m.effective, m.savedSet, m.filesystem)
 }
 
 const (

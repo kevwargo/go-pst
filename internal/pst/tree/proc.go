@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/kevwargo/go-pst/internal/pst/tree/ugid"
 )
 
 type ProcConfig struct {
@@ -41,8 +43,8 @@ type attrs struct {
 	name           string
 	args           []string
 	workdir        string
-	uid            ugid
-	gid            ugid
+	uid            ugid.UGID
+	gid            ugid.UGID
 	state          byte
 	nsPid          []string
 	pathEnvEntries []string
@@ -162,11 +164,11 @@ func (p *process) loadAttrs(cfg *ProcConfig) error {
 	}
 
 	if cfg.UGID {
-		p.attrs.uid, err = parseUGID(raw["Uid"])
+		p.attrs.uid, err = ugid.Parse(raw["Uid"])
 		if err != nil {
 			return err
 		}
-		p.attrs.gid, err = parseUGID(raw["Gid"])
+		p.attrs.gid, err = ugid.Parse(raw["Gid"])
 		if err != nil {
 			return err
 		}
