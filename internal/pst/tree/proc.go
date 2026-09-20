@@ -1,8 +1,6 @@
 package tree
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -119,27 +117,11 @@ func (p *process) fork(newPID int) *process {
 }
 
 func (a *attrs) cmdline() string {
-	if a.args == nil {
+	if len(a.args) == 0 {
 		return fmt.Sprintf("*%s*", a.name)
 	}
 
-	if !slices.ContainsFunc(a.args, func(a string) bool {
-		return a == "" || strings.ContainsAny(a, " \t\n")
-	}) {
-		return strings.Join(a.args, " ")
-	}
-
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.Encode(a.args)
-
-	data := buf.Bytes()
-	for last := buf.Len() - 1; data[last] == '\n'; last-- {
-		data = data[:last]
-	}
-
-	return string(data)
+	return strings.Join(a.args, " ")
 }
 
 func (a *attrs) isZombie() bool {

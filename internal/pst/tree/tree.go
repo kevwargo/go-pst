@@ -17,7 +17,6 @@ import (
 
 type Config struct {
 	PCfg          ProcConfig
-	FullMatch     bool
 	ShowDead      bool
 	Truncate      int
 	FitTermWidth  bool

@@ -14,7 +14,7 @@ func Execute() error {
 	var cfg config
 
 	cmd := &cobra.Command{
-		Use:           "pst",
+		Use:           "pst [flags] PATTERN",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -36,7 +36,6 @@ func Execute() error {
 	fs.BoolVarP(&cfg.tree.PCfg.PathEnv, "path-env", "P", false, "")
 	fs.BoolVarP(&cfg.tree.PCfg.MemoryUsage, "memory-usage", "M", false, "")
 	fs.BoolVarP(&cfg.tree.ShowDead, "show-dead", "D", false, "")
-	fs.BoolVarP(&cfg.tree.FullMatch, "full-match", "f", false, "")
 
 	fs.BoolVarP(&cfg.interactive, "interactive", "i", false, "")
 	fs.BoolVarP(&cfg.tui.Fullscreen, "fullscreen", "A", false, "")

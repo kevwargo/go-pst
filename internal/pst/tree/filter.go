@@ -1,9 +1,8 @@
 package tree
 
 import (
-	"slices"
+	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kevwargo/go-pst/internal/benchmark"
@@ -25,13 +24,22 @@ const (
 
 type filterFn func(*process) bool
 
-func (t *Tree) Filter(pattern string) {
+func (t *Tree) Filter(pattern string) error {
+	rx, err := regexp.Compile(pattern)
+	if err != nil {
+		return err
+	}
+
 	t.filter = &filter{
-		apply:   t.initMatchFn(pattern),
+		apply: func(p *process) bool {
+			return strconv.Itoa(p.id) == pattern || rx.MatchString(p.attrs.cmdline())
+		},
 		matches: make(map[int]matchType),
 	}
 
 	t.refreshMatches()
+
+	return nil
 }
 
 func (t *Tree) refreshMatches() {
@@ -75,24 +83,5 @@ func (t *Tree) matchDescendants(p *process) {
 		}
 
 		t.matchDescendants(c)
-	}
-}
-
-func (t *Tree) initMatchFn(pattern string) filterFn {
-	if t.cfg.FullMatch {
-		return func(p *process) bool {
-			return strings.Contains(p.attrs.cmdline(), pattern)
-		}
-	}
-
-	return func(p *process) bool {
-		if strconv.Itoa(p.id) == pattern {
-			// TODO: standardize this behavior, maybe with a separate flag
-			return true
-		}
-
-		return slices.ContainsFunc(p.attrs.args, func(a string) bool {
-			return strings.Contains(a, pattern)
-		})
 	}
 }
