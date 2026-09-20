@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/procwatch"
 	"github.com/kevwargo/go-pst/internal/pst/tree"
@@ -36,16 +38,17 @@ func Run(cfg *Config, pst *tree.Tree) error {
 }
 
 type tui struct {
-	cfg     *Config
-	pst     *tree.Tree
-	watcher procwatch.Watcher
-	keymap  *keymap.Keymap
-
-	width    int
-	height   int
-	showHelp bool
-	err      error
-	quitting bool
+	cfg         *Config
+	pst         *tree.Tree
+	watcher     procwatch.Watcher
+	keymap      *keymap.Keymap
+	showHelp    bool
+	lastKey     tea.KeyMsg
+	showLastKey bool
+	width       int
+	height      int
+	err         error
+	quitting    bool
 }
 
 func (t *tui) Init() tea.Cmd {
@@ -65,6 +68,7 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
 		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
 		AddFunc("f", "Toggle fullscreen", t.toggleFullscreen).
+		AddFunc("K", "Toggle last key", t.toggleLastKey).
 		NewGroup().
 		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
 		AddCmd("r", "Reload whole tree", t.reload).
@@ -81,6 +85,7 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		t.lastKey = msg
 		cmd = t.keymap.HandleKey(msg)
 	case tea.WindowSizeMsg:
 		t.handleWinSize(msg)
@@ -94,14 +99,19 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *tui) View() (v tea.View) {
-	v.SetContent(t.pst.View())
-	if v.Content != "" && !strings.HasSuffix(v.Content, "\n") {
-		v.SetContent(v.Content + "\n")
-	}
+	buf := bytes.NewBufferString(t.pst.View())
 
 	if t.showHelp {
-		v.SetContent(v.Content + t.keymap.Help())
+		fmt.Fprint(buf, "\n", t.keymap.Help())
+		if t.showLastKey && t.lastKey != nil {
+			fmt.Fprintf(buf, "\nLast key: %q", t.lastKey.String())
+			buf.WriteString(ansi.Style{}.ForegroundColor(ansi.Green).String())
+			json.NewEncoder(buf).Encode(t.lastKey.Key())
+			buf.WriteString(ansi.ResetStyle)
+		}
 	}
+	buf.WriteByte('\n')
+	v.SetContent(buf.String())
 
 	v.Cursor = &tea.Cursor{Shape: tea.CursorBlock}
 	v.AltScreen = t.cfg.Fullscreen
@@ -161,6 +171,10 @@ func (t *tui) toggleHelp() {
 
 func (t *tui) toggleFullscreen() {
 	t.cfg.Fullscreen = !t.cfg.Fullscreen
+}
+
+func (t *tui) toggleLastKey() {
+	t.showLastKey = !t.showLastKey
 }
 
 func (t *tui) pagerUp() {
