@@ -3,26 +3,7 @@ package tree
 import (
 	"regexp"
 	"strconv"
-	"time"
-
-	"github.com/kevwargo/go-pst/internal/benchmark"
 )
-
-type filter struct {
-	apply   filterFn
-	matches map[int]matchType
-}
-
-type matchType int
-
-const (
-	noMatch matchType = iota
-	matchDirect
-	matchAsDescendant
-	matchAsAncestor
-)
-
-type filterFn func(*process) bool
 
 func (t *Tree) Filter(pattern string) error {
 	rx, err := regexp.Compile(pattern)
@@ -31,10 +12,29 @@ func (t *Tree) Filter(pattern string) error {
 	}
 
 	t.filter = &filter{
-		apply: func(p *process) bool {
-			return strconv.Itoa(p.id) == pattern || rx.MatchString(p.attrs.cmdline())
+		apply: func(p *process) *match {
+			if !t.cfg.ShowDead && p.exit != nil {
+				return nil
+			}
+
+			var m match
+			if strconv.Itoa(p.id) == pattern {
+				m.pid = true
+			}
+			for _, g := range rx.FindAllStringIndex(p.attrs.cmdline(nil), -1) {
+				m.regions = append(m.regions, region{
+					from: g[0],
+					to:   g[1],
+				})
+			}
+
+			if !m.pid && len(m.regions) == 0 {
+				return nil
+			}
+
+			return &m
 		},
-		matches: make(map[int]matchType),
+		matchMap: make(map[int]*match),
 	}
 
 	t.refreshMatches()
@@ -42,46 +42,65 @@ func (t *Tree) Filter(pattern string) error {
 	return nil
 }
 
-func (t *Tree) refreshMatches() {
-	defer benchmark.Record("tree.refreshMatches", time.Now())
-
-	// TODO: take dead into account
-
-	clear(t.filter.matches)
-	for _, p := range t.top {
-		t.matchProcess(p)
-	}
-
-	t.refreshView()
+type filter struct {
+	apply    func(*process) *match
+	matchMap map[int]*match
 }
 
-func (t *Tree) matchProcess(p *process) {
-	if p.exit != nil && !t.cfg.ShowDead {
-		return
+type match struct {
+	pid     bool
+	regions []region
+}
+
+type region struct {
+	from int
+	to   int
+}
+
+func (f *filter) matches(pid int) *match {
+	if f == nil {
+		return &defaultMatch
 	}
 
-	if t.filter.apply(p) {
-		t.filter.matches[p.id] = matchDirect
-		t.matchDescendants(p)
+	return f.matchMap[pid]
+}
+
+func (f *filter) refresh(ps []*process) {
+	clear(f.matchMap)
+	for _, p := range ps {
+		f.matchProc(p)
+	}
+}
+
+func (f *filter) matchProc(p *process) {
+	if m := f.apply(p); m != nil {
+		f.matchMap[p.id] = m
+		f.matchAllDescendants(p.children)
 	} else {
 		for _, c := range p.children {
-			t.matchProcess(c)
-
-			if t.filter.matches[c.id] != noMatch {
-				t.filter.matches[p.id] = matchAsAncestor
+			f.matchProc(c)
+			if f.matchMap[c.id] != nil {
+				f.matchMap[p.id] = &defaultMatch
 			}
 		}
 	}
 }
 
-func (t *Tree) matchDescendants(p *process) {
-	for _, c := range p.children {
-		if t.filter.apply(c) {
-			t.filter.matches[c.id] = matchDirect
-		} else {
-			t.filter.matches[c.id] = matchAsDescendant
+func (f *filter) matchAllDescendants(children []*process) {
+	for _, c := range children {
+		m := f.apply(c)
+		if m == nil {
+			m = &defaultMatch
 		}
 
-		t.matchDescendants(c)
+		f.matchMap[c.id] = m
+		f.matchAllDescendants(c.children)
 	}
 }
+
+func (t *Tree) refreshMatches() {
+	t.filter.refresh(t.top)
+	t.refreshView()
+}
+
+var defaultMatch match

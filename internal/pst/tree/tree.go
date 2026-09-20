@@ -6,9 +6,11 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/pager"
@@ -80,6 +82,7 @@ func (t *Tree) GetPager() *pager.Pager {
 
 func (t *Tree) HandleNewProcess(ev procwatch.EventForkProc) {
 	if parent := t.pMap[ev.ParentPID]; parent != nil {
+		// FIXME: load from procfs (+ check if parentID didn't change due to race)
 		t.pMap[ev.PID] = parent.fork(ev.PID)
 		t.refreshMatches()
 	}
@@ -210,20 +213,12 @@ func (t *Tree) refreshView() {
 	}
 }
 
-func (t *Tree) isProcVisible(p *process) bool {
-	if p.exit != nil && !t.cfg.ShowDead {
-		return false
-	}
-
-	return t.filter == nil || t.filter.matches[p.id] != noMatch
-}
-
 func (t *Tree) sort(ps []*process) int {
 	weights := make(map[int]int)
 	totalWeight := 0
 
 	for _, p := range ps {
-		if !t.isProcVisible(p) {
+		if t.filter.matches(p.id) == nil {
 			continue
 		}
 
@@ -244,7 +239,8 @@ func (t *Tree) sort(ps []*process) int {
 }
 
 func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
-	if !t.isProcVisible(p) {
+	m := t.filter.matches(p.id)
+	if m == nil {
 		return
 	}
 
@@ -264,10 +260,14 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 
 	var pid string
 	if p.attrs.nsPid == nil {
-		pid = fmt.Sprintf("[%d]", p.id)
+		pid = strconv.Itoa(p.id)
 	} else {
-		pid = fmt.Sprint(p.attrs.nsPid)
+		pid = strings.Join(p.attrs.nsPid, " ")
 	}
+	if m.pid {
+		pid = matchStyle.Styled(pid)
+	}
+	pid = fmt.Sprintf("[%s]", pid)
 
 	var workdir string
 	if t.cfg.PCfg.Workdir {
@@ -291,7 +291,7 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 
 	pg.WriteLine(
 		fmt.Sprintf("%s%s%s ", indent, pid, exit),
-		fmt.Sprintf("%s%s%s%s%s", mem, pathEnv, ugid, workdir, p.attrs.cmdline()),
+		fmt.Sprintf("%s%s%s%s%s", mem, pathEnv, ugid, workdir, p.attrs.cmdline(m)),
 	)
 	t.renderThreads(p, pg, indent)
 
@@ -396,3 +396,5 @@ func (t *Tree) reload() error {
 
 	return nil
 }
+
+var matchStyle = ansi.NewStyle(ansi.AttrBrightRedForegroundColor, ansi.AttrBold)

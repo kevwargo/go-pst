@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -116,12 +117,32 @@ func (p *process) fork(newPID int) *process {
 	return child
 }
 
-func (a *attrs) cmdline() string {
+func (a *attrs) cmdline(m *match) string {
+	var cmdline string
 	if len(a.args) == 0 {
-		return fmt.Sprintf("*%s*", a.name)
+		cmdline = fmt.Sprintf("*%s*", a.name)
+	} else {
+		cmdline = strings.Join(a.args, " ")
 	}
 
-	return strings.Join(a.args, " ")
+	if m == nil {
+		return cmdline
+	}
+
+	var (
+		buf     bytes.Buffer
+		lastPos int
+	)
+	for _, r := range m.regions {
+		buf.WriteString(cmdline[lastPos:r.from])
+		buf.WriteString(matchStyle.Styled(cmdline[r.from:r.to]))
+		lastPos = r.to
+	}
+	if lastPos < len(cmdline) {
+		buf.WriteString(cmdline[lastPos:])
+	}
+
+	return buf.String()
 }
 
 func (a *attrs) isZombie() bool {

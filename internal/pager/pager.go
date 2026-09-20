@@ -18,11 +18,7 @@ type Pager struct {
 }
 
 func (p *Pager) WriteLine(fixed, scrollable string) {
-	p.lines = append(p.lines, line{
-		fixed:      fixed,
-		scrollable: scrollable,
-	})
-
+	p.lines = append(p.lines, makeLine(fixed, scrollable))
 	p.needsRefresh = true
 }
 
@@ -107,7 +103,7 @@ func (p *Pager) incXPos(delta int) bool {
 
 	var xPosMax int
 	for _, line := range p.visibleLines() {
-		xPosMax = max(xPosMax, line.length()-p.maxWidth)
+		xPosMax = max(xPosMax, line.lenTotal-p.maxWidth)
 	}
 
 	old := p.xPos
