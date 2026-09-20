@@ -58,6 +58,8 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("right", "Right 5 chars", t.pagerRight(5)).
 		AddFunc(",", "Left 1 char", t.pagerLeft(1)).
 		AddFunc(".", "Right 1 char", t.pagerRight(1)).
+		AddFunc("home", "Scroll home", t.pagerHome).
+		AddFunc("end", "Scroll to end", t.pagerEnd).
 		NewGroup().
 		AddFunc("?", "Toggle help", t.toggleHelp, "h").
 		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
@@ -183,6 +185,14 @@ func (t *tui) pagerLeft(delta uint) func() {
 
 func (t *tui) pagerRight(delta uint) func() {
 	return func() { t.pst.GetPager().Right(delta) }
+}
+
+func (t *tui) pagerHome() {
+	t.pst.GetPager().FullLeft()
+}
+
+func (t *tui) pagerEnd() {
+	t.pst.GetPager().FullRight()
 }
 
 func (t *tui) reload() tea.Msg {

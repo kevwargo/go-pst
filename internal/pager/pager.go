@@ -68,6 +68,20 @@ func (p *Pager) Right(delta uint) {
 	}
 }
 
+func (p *Pager) FullLeft() {
+	if p.xPos != 0 {
+		p.xPos = 0
+		p.needsRefresh = true
+	}
+}
+
+func (p *Pager) FullRight() {
+	if xPosMax := p.xPosMax(); p.xPos != xPosMax {
+		p.xPos = xPosMax
+		p.needsRefresh = true
+	}
+}
+
 func (p *Pager) Reset() {
 	p.lines = p.lines[:0]
 }
@@ -101,16 +115,19 @@ func (p *Pager) incXPos(delta int) bool {
 		return false
 	}
 
-	var xPosMax int
+	old := p.xPos
+	p.xPos = max(p.xPos+delta, 0)
+	p.xPos = min(p.xPos, p.xPosMax())
+
+	return old != p.xPos
+}
+
+func (p *Pager) xPosMax() (xPosMax int) {
 	for _, line := range p.visibleLines() {
 		xPosMax = max(xPosMax, line.lenTotal-p.maxWidth)
 	}
 
-	old := p.xPos
-	p.xPos = max(p.xPos+delta, 0)
-	p.xPos = min(p.xPos, xPosMax)
-
-	return old != p.xPos
+	return xPosMax
 }
 
 func (p *Pager) refresh() {
