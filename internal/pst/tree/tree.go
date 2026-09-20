@@ -19,6 +19,7 @@ import (
 
 type Config struct {
 	PCfg          ProcConfig
+	IgnoreCase    bool
 	ShowDead      bool
 	Truncate      int
 	FitTermWidth  bool

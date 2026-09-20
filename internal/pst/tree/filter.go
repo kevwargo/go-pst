@@ -6,6 +6,10 @@ import (
 )
 
 func (t *Tree) Filter(pattern string) error {
+	if t.cfg.IgnoreCase {
+		pattern = "(?i)" + pattern
+	}
+
 	rx, err := regexp.Compile(pattern)
 	if err != nil {
 		return err
