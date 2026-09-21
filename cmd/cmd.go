@@ -37,6 +37,7 @@ func Execute() error {
 	fs.BoolVarP(&cfg.tree.PCfg.MemoryUsage, "memory-usage", "M", false, "")
 	fs.BoolVarP(&cfg.tree.ShowDead, "show-dead", "D", false, "")
 	fs.BoolVarP(&cfg.tree.IgnoreCase, "ignore-case", "I", false, "")
+	fs.BoolVarP(&cfg.tree.ExperimentalRender, "experimental-render", "X", false, "")
 
 	fs.BoolVarP(&cfg.interactive, "interactive", "i", false, "")
 	fs.BoolVarP(&cfg.tui.Fullscreen, "fullscreen", "A", false, "")
@@ -73,7 +74,7 @@ func execute(cfg *config, args []string) error {
 	if cfg.interactive {
 		cfg.tree.FitTermHeight = true
 		cfg.tree.FitTermWidth = true
-	} else if cfg.fitTerm {
+	} else if cfg.fitTerm || cfg.tree.ExperimentalRender {
 		cfg.tree.FitTermWidth = true
 	}
 	if cfg.inspectAllFDs {

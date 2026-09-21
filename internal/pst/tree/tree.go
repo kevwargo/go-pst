@@ -18,12 +18,13 @@ import (
 )
 
 type Config struct {
-	PCfg          ProcConfig
-	IgnoreCase    bool
-	ShowDead      bool
-	Truncate      int
-	FitTermWidth  bool
-	FitTermHeight bool
+	PCfg               ProcConfig
+	IgnoreCase         bool
+	ShowDead           bool
+	Truncate           int
+	FitTermWidth       bool
+	FitTermHeight      bool
+	ExperimentalRender bool
 }
 
 type Tree struct {
@@ -209,8 +210,14 @@ func (t *Tree) refreshView() {
 	pg.Reset()
 
 	t.sort(t.top)
-	for _, p := range t.top {
-		t.renderProcess(p, pg, 0)
+
+	if t.cfg.ExperimentalRender {
+		r := renderState{tree: t}
+		r.render(t.top)
+	} else {
+		for _, p := range t.top {
+			t.renderProcess(p, pg, 0)
+		}
 	}
 }
 
@@ -294,7 +301,7 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 		fmt.Sprintf("%s%s%s ", indent, pid, exit),
 		fmt.Sprintf("%s%s%s%s%s", mem, pathEnv, ugid, workdir, p.attrs.cmdline(m)),
 	)
-	t.renderThreads(p, pg, indent)
+	t.renderThreads(p, indent)
 
 	if t.cfg.PCfg.FDs {
 		for _, fd := range p.fds {
@@ -307,7 +314,7 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 	}
 }
 
-func (t *Tree) renderThreads(p *process, pg *pager.Pager, indent string) {
+func (t *Tree) renderThreads(p *process, indent string) {
 	if !t.cfg.PCfg.Threads {
 		return
 	}
@@ -322,7 +329,7 @@ func (t *Tree) renderThreads(p *process, pg *pager.Pager, indent string) {
 			dead = " *dead*"
 		}
 
-		pg.WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.id, dead), thr.name)
+		t.GetPager().WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.id, dead), thr.name)
 	}
 }
 
