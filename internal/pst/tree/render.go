@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+
+	"github.com/kevwargo/go-pst/internal/pager"
 )
 
 type renderState struct {
-	tree   *Tree
-	lb     bytes.Buffer
-	levels []nestLevel
+	matchProc func(int) *match
+	pager     *pager.Pager
+	buf       bytes.Buffer
+	levels    []nestLevel
 }
 
 type nestLevel struct {
@@ -17,7 +20,7 @@ type nestLevel struct {
 }
 
 func (r *renderState) render(ps []*process) {
-	ps = slices.DeleteFunc(ps, func(p *process) bool { return r.tree.filter.matches(p.id) == nil })
+	ps = slices.DeleteFunc(ps, func(p *process) bool { return r.matchProc(p.id) == nil })
 
 	if l := len(ps); l > 0 {
 		for _, p := range ps[:l-1] {
@@ -28,30 +31,40 @@ func (r *renderState) render(ps []*process) {
 }
 
 func (r *renderState) renderProcLine(p *process, isLast bool) {
-	var branch rune
+	r.renderControls(isLast)
+	fmt.Fprintf(&r.buf, "[%d] %s", p.id, p.attrs.cmdline(r.matchProc(p.id)))
 
-	for _, nl := range r.levels {
-		if nl.isLast {
-			branch = ' '
-		} else {
-			branch = lineVertical
-		}
-		fmt.Fprintf(&r.lb, "%c ", branch)
-	}
-
-	if isLast {
-		branch = lineBranchLast
-	} else {
-		branch = lineBranchRight
-	}
-
-	fmt.Fprintf(&r.lb, "%c%c[%d] %s", branch, lineHorizontal, p.id, p.attrs.cmdline(r.tree.filter.matches(p.id)))
-	r.tree.GetPager().WriteLine(r.lb.String(), "")
-	r.lb.Reset()
+	r.pager.WriteLine(r.buf.String(), "")
+	r.buf.Reset()
 
 	r.levels = append(r.levels, nestLevel{isLast: isLast})
 	r.render(p.children)
 	r.levels = r.levels[:len(r.levels)-1]
+}
+
+func (r *renderState) renderControls(isLast bool) {
+	if len(r.levels) == 0 {
+		return
+	}
+
+	var c rune
+
+	for _, nl := range r.levels[1:] {
+		if nl.isLast {
+			c = ' '
+		} else {
+			c = lineVertical
+		}
+		fmt.Fprintf(&r.buf, "%c ", c)
+	}
+
+	if isLast {
+		c = lineBranchLast
+	} else {
+		c = lineBranchRight
+	}
+
+	fmt.Fprintf(&r.buf, "%c%c", c, lineHorizontal)
 }
 
 const (

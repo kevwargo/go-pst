@@ -212,7 +212,10 @@ func (t *Tree) refreshView() {
 	t.sort(t.top)
 
 	if t.cfg.ExperimentalRender {
-		r := renderState{tree: t}
+		r := renderState{
+			matchProc: t.filter.matches,
+			pager:     t.GetPager(),
+		}
 		r.render(t.top)
 	} else {
 		for _, p := range t.top {
