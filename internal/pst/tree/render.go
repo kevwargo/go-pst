@@ -3,7 +3,8 @@ package tree
 import (
 	"bytes"
 	"fmt"
-	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/kevwargo/go-pst/internal/pager"
 )
@@ -20,26 +21,71 @@ type nestLevel struct {
 }
 
 func (r *renderState) render(ps []*process) {
-	ps = slices.DeleteFunc(ps, func(p *process) bool { return r.matchProc(p.id) == nil })
+	var filtered []*process
+	for _, p := range ps {
+		if r.matchProc(p.id) != nil {
+			filtered = append(filtered, p)
+		}
+	}
 
-	if l := len(ps); l > 0 {
-		for _, p := range ps[:l-1] {
+	if l := len(filtered); l > 0 {
+		for _, p := range filtered[:l-1] {
 			r.renderProcLine(p, false)
 		}
-		r.renderProcLine(ps[l-1], true)
+		r.renderProcLine(filtered[l-1], true)
 	}
 }
 
 func (r *renderState) renderProcLine(p *process, isLast bool) {
-	r.renderControls(isLast)
-	fmt.Fprintf(&r.buf, "[%d] %s", p.id, p.attrs.cmdline(r.matchProc(p.id)))
-
-	r.pager.WriteLine(r.buf.String(), "")
-	r.buf.Reset()
+	fixed := r.renderFixed(p, isLast)
+	scrollable := r.renderScrollable(p)
+	r.pager.WriteLine(fixed, scrollable)
 
 	r.levels = append(r.levels, nestLevel{isLast: isLast})
 	r.render(p.children)
 	r.levels = r.levels[:len(r.levels)-1]
+}
+
+func (r *renderState) renderFixed(p *process, isLast bool) string {
+	r.renderControls(isLast)
+
+	var pid string
+	if p.attrs.nsPid == nil {
+		pid = strconv.Itoa(p.id)
+	} else {
+		pid = strings.Join(p.attrs.nsPid, " ")
+	}
+	if r.matchProc(p.id).pid {
+		pid = matchStyle.Styled(pid)
+	}
+	fmt.Fprintf(&r.buf, "[%s]", pid)
+
+	if p.attrs.isZombie() {
+		r.buf.WriteRune('Z')
+	}
+	if p.exit != nil {
+		if p.exit.signal > 0 {
+			fmt.Fprintf(&r.buf, "*s:%d*", p.exit.signal)
+		} else {
+			fmt.Fprintf(&r.buf, "*e:%d*", p.exit.code)
+		}
+	}
+
+	r.buf.WriteRune(' ')
+
+	res := r.buf.String()
+	r.buf.Reset()
+
+	return res
+}
+
+func (r *renderState) renderScrollable(p *process) string {
+	fmt.Fprintf(&r.buf, "%s", p.attrs.cmdline(r.matchProc(p.id)))
+
+	res := r.buf.String()
+	r.buf.Reset()
+
+	return res
 }
 
 func (r *renderState) renderControls(isLast bool) {
