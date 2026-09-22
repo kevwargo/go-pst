@@ -383,7 +383,7 @@ func (t *Tree) mergePMap(newPMap map[int]*process) {
 				if p.attrs.isZombie() {
 					p.exit = old.exit
 				} else {
-					log.Printf("PID %d most probably recycled - old:%p new:%p", old, p)
+					log.Printf("PID %d most probably recycled - old:%p new:%p", pid, old, p)
 				}
 			}
 		}

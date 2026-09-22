@@ -16,28 +16,9 @@ func (t *Tree) Filter(pattern string) error {
 	}
 
 	t.filter = &filter{
-		apply: func(p *process) *match {
-			if !t.cfg.ShowDead && p.exit != nil {
-				return nil
-			}
-
-			var m match
-			if strconv.Itoa(p.id) == pattern {
-				m.pid = true
-			}
-			for _, g := range rx.FindAllStringIndex(p.attrs.cmdline(nil), -1) {
-				m.regions = append(m.regions, region{
-					from: g[0],
-					to:   g[1],
-				})
-			}
-
-			if !m.pid && len(m.regions) == 0 {
-				return nil
-			}
-
-			return &m
-		},
+		tree:     t,
+		pattern:  pattern,
+		rx:       rx,
 		matchMap: make(map[int]*match),
 	}
 
@@ -47,7 +28,9 @@ func (t *Tree) Filter(pattern string) error {
 }
 
 type filter struct {
-	apply    func(*process) *match
+	tree     *Tree
+	pattern  string
+	rx       *regexp.Regexp
 	matchMap map[int]*match
 }
 
@@ -76,6 +59,29 @@ func (f *filter) refresh(ps []*process) {
 	}
 }
 
+func (f *filter) apply(p *process) *match {
+	if !f.tree.cfg.ShowDead && p.exit != nil {
+		return nil
+	}
+
+	var m match
+	if strconv.Itoa(p.id) == f.pattern {
+		m.pid = true
+	}
+	for _, g := range f.rx.FindAllStringIndex(p.attrs.cmdline(nil), -1) {
+		m.regions = append(m.regions, region{
+			from: g[0],
+			to:   g[1],
+		})
+	}
+
+	if !m.pid && len(m.regions) == 0 {
+		return nil
+	}
+
+	return &m
+}
+
 func (f *filter) matchProc(p *process) {
 	if m := f.apply(p); m != nil {
 		f.matchMap[p.id] = m
@@ -92,6 +98,10 @@ func (f *filter) matchProc(p *process) {
 
 func (f *filter) matchAllDescendants(children []*process) {
 	for _, c := range children {
+		if !f.tree.cfg.ShowDead && c.exit != nil {
+			continue
+		}
+
 		m := f.apply(c)
 		if m == nil {
 			m = &defaultMatch

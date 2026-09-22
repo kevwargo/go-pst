@@ -37,16 +37,14 @@ func (r *renderState) render(ps []*process) {
 }
 
 func (r *renderState) renderProcLine(p *process, isLast bool) {
-	fixed := r.renderFixed(p, isLast)
-	scrollable := r.renderScrollable(p)
-	r.pager.WriteLine(fixed, scrollable)
+	r.pager.WriteLine(r.buildFixed(p, isLast), r.buildScrollable(p))
 
 	r.levels = append(r.levels, nestLevel{isLast: isLast})
 	r.render(p.children)
 	r.levels = r.levels[:len(r.levels)-1]
 }
 
-func (r *renderState) renderFixed(p *process, isLast bool) string {
+func (r *renderState) buildFixed(p *process, isLast bool) string {
 	r.renderControls(isLast)
 
 	var pid string
@@ -79,7 +77,7 @@ func (r *renderState) renderFixed(p *process, isLast bool) string {
 	return res
 }
 
-func (r *renderState) renderScrollable(p *process) string {
+func (r *renderState) buildScrollable(p *process) string {
 	fmt.Fprintf(&r.buf, "%s", p.attrs.cmdline(r.matchProc(p.id)))
 
 	res := r.buf.String()
