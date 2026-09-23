@@ -34,6 +34,7 @@ func (t *tui) handleRefresh(msg refreshMsg) (cmd tea.Cmd) {
 		cmd = t.closeWatcher
 	} else if msg == refreshTimer {
 		cmd = tickRefresh()
+		t.timerCount++
 	}
 
 	return cmd

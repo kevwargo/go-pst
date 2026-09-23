@@ -50,9 +50,8 @@ type tui struct {
 	lastKey     tea.KeyMsg
 	showLastKey bool
 
-	recvCount        int
-	recvTimeoutCount int
-	lastRecv         time.Time
+	recvCount  int
+	timerCount int
 
 	err      error
 	quitting bool
@@ -120,7 +119,7 @@ func (t *tui) View() (v tea.View) {
 	buf.WriteByte('\n')
 
 	if t.cfg.DebugRecv {
-		fmt.Fprintf(buf, "recv:%d timer:%d\n", t.recvCount, t.recvTimeoutCount)
+		fmt.Fprintf(buf, "recv:%d timer:%d\n", t.recvCount, t.timerCount)
 	}
 
 	v.SetContent(buf.String())
@@ -133,7 +132,7 @@ func (t *tui) View() (v tea.View) {
 
 func (t *tui) recvMsg() tea.Msg {
 	msg := t.watcher.Recv()
-	t.lastRecv = time.Now()
+	t.recvCount++
 
 	return msg
 }

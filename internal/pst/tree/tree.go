@@ -2,12 +2,9 @@ package tree
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -18,13 +15,11 @@ import (
 )
 
 type Config struct {
-	PCfg               ProcConfig
-	IgnoreCase         bool
-	ShowDead           bool
-	Truncate           int
-	FitTermWidth       bool
-	FitTermHeight      bool
-	ExperimentalRender bool
+	PCfg          ProcConfig
+	IgnoreCase    bool
+	ShowDead      bool
+	Truncate      int
+	FitTermHeight bool
 }
 
 type Tree struct {
@@ -68,15 +63,13 @@ func (t *Tree) GetPager() *pager.Pager {
 
 	t.pager = new(pager.Pager)
 
-	if !t.cfg.FitTermHeight && !t.cfg.FitTermWidth {
-		t.pager.SetMaxWidth(t.cfg.Truncate)
-	} else if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {
+	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {
 		if t.cfg.FitTermHeight {
 			t.pager.SetMaxHeight(h)
 		}
-		if t.cfg.FitTermWidth {
-			t.pager.SetMaxWidth(w)
-		}
+		t.pager.SetMaxWidth(max(w, t.cfg.Truncate))
+	} else {
+		t.pager.SetMaxWidth(t.cfg.Truncate)
 	}
 
 	return t.pager
@@ -211,18 +204,12 @@ func (t *Tree) refreshView() {
 
 	t.sort(t.top)
 
-	if t.cfg.ExperimentalRender {
-		r := renderState{
-			matchProc: t.filter.matches,
-			pager:     t.GetPager(),
-			cfg:       t.cfg,
-		}
-		r.render(t.top)
-	} else {
-		for _, p := range t.top {
-			t.renderProcess(p, pg, 0)
-		}
+	r := renderState{
+		matchProc: t.filter.matches,
+		pager:     t.GetPager(),
+		cfg:       t.cfg,
 	}
+	r.render(t.top)
 }
 
 func (t *Tree) sort(ps []*process) int {
@@ -237,6 +224,10 @@ func (t *Tree) sort(ps []*process) int {
 		w := t.sort(p.children)
 		weights[p.id] = w
 		totalWeight += w + 1
+
+		slices.SortFunc(p.threads, func(a, b *thread) int {
+			return a.id - b.id
+		})
 	}
 
 	slices.SortFunc(ps, func(a, b *process) int {
@@ -248,98 +239,6 @@ func (t *Tree) sort(ps []*process) int {
 	})
 
 	return totalWeight
-}
-
-func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
-	m := t.filter.matches(p.id)
-	if m == nil {
-		return
-	}
-
-	indent := strings.Repeat("  ", level)
-
-	var exit string
-
-	if p.attrs.isZombie() {
-		exit = "Z"
-	} else if p.exit != nil {
-		if p.exit.signal > 0 {
-			exit = fmt.Sprintf("*s:%d*", p.exit.signal)
-		} else {
-			exit = fmt.Sprintf("*e:%d*", p.exit.code)
-		}
-	}
-
-	var pid string
-	if p.attrs.nsPid == nil {
-		pid = strconv.Itoa(p.id)
-	} else {
-		pid = strings.Join(p.attrs.nsPid, " ")
-	}
-	if m.pid {
-		pid = matchStyle.Styled(pid)
-	}
-	pid = fmt.Sprintf("[%s]", pid)
-
-	var workdir string
-	if t.cfg.PCfg.Workdir {
-		workdir = fmt.Sprintf("{%s} ", p.attrs.workdir)
-	}
-
-	var ugid string
-	if t.cfg.PCfg.UGID {
-		ugid = fmt.Sprintf("[%s:%s] ", p.attrs.uid.ID(), p.attrs.gid.ID())
-	}
-
-	var pathEnv string
-	if t.cfg.PCfg.PathEnv {
-		pathEnv = strings.Join(p.attrs.pathEnvEntries, ":") + " "
-	}
-
-	var mem string
-	if t.cfg.PCfg.MemoryUsage {
-		mem = p.attrs.memUsage.render() + " "
-	}
-
-	pg.WriteLine(
-		fmt.Sprintf("%s%s%s ", indent, pid, exit),
-		fmt.Sprintf("%s%s%s%s%s", mem, pathEnv, ugid, workdir, p.attrs.cmdline(m)),
-	)
-	t.renderThreads(p, indent)
-	t.renderFDs(p, indent)
-
-	for _, c := range p.children {
-		t.renderProcess(c, pg, level+1)
-	}
-}
-
-func (t *Tree) renderThreads(p *process, indent string) {
-	if !t.cfg.PCfg.Threads || t.filter.matches(p.id).isEphemeral() && !t.cfg.PCfg.EphemeralStats {
-		return
-	}
-
-	for _, thr := range p.threads {
-		var dead string
-		if thr.dead {
-			if !t.cfg.ShowDead {
-				continue
-			}
-
-			dead = " *dead*"
-		}
-
-		t.GetPager().WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.id, dead), thr.name)
-	}
-}
-
-func (t *Tree) renderFDs(p *process, indent string) {
-	if !t.cfg.PCfg.FDs || t.filter.matches(p.id).isEphemeral() && !t.cfg.PCfg.EphemeralStats {
-		return
-	}
-
-	for _, fd := range p.fds {
-		t.GetPager().WriteLine(fmt.Sprintf("%s %d -> ", indent, fd.num), fd.link)
-	}
 }
 
 func (t *Tree) load() error {
@@ -390,6 +289,11 @@ func (t *Tree) mergePMap(newPMap map[int]*process) {
 					p.exit = old.exit
 				} else {
 					log.Printf("PID %d most probably recycled - old:%p new:%p", pid, old, p)
+				}
+			}
+			for _, t := range old.threads {
+				if t.dead {
+					p.threads = append(p.threads, t)
 				}
 			}
 		}

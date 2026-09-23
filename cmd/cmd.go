@@ -37,7 +37,6 @@ func Execute() error {
 	fs.BoolVarP(&cfg.tree.PCfg.MemoryUsage, "memory-usage", "M", false, "")
 	fs.BoolVarP(&cfg.tree.ShowDead, "show-dead", "D", false, "")
 	fs.BoolVarP(&cfg.tree.IgnoreCase, "ignore-case", "I", false, "")
-	fs.BoolVarP(&cfg.tree.ExperimentalRender, "experimental-render", "X", false, "")
 	fs.BoolVar(
 		&cfg.tree.PCfg.EphemeralStats,
 		"ephemeral",
@@ -48,7 +47,6 @@ func Execute() error {
 	fs.BoolVarP(&cfg.interactive, "interactive", "i", false, "")
 	fs.BoolVarP(&cfg.tui.Fullscreen, "fullscreen", "A", false, "")
 	fs.BoolVar(&cfg.tui.DebugRecv, "debug-recv", false, "")
-	fs.BoolVarP(&cfg.fitTerm, "fit-terminal-width", "t", false, "")
 
 	// TODO: use different variable maybe
 	fs.BoolVar(&cfg.inspectAllFDs, "inspect-all-fds", false, "")
@@ -69,7 +67,6 @@ func Execute() error {
 type config struct {
 	tree             tree.Config
 	tui              tui.Config
-	fitTerm          bool
 	interactive      bool
 	dumpProcSnapshot string
 	inspectAllFDs    bool
@@ -85,9 +82,6 @@ func execute(cfg *config, args []string) error {
 
 	if cfg.interactive {
 		cfg.tree.FitTermHeight = true
-		cfg.tree.FitTermWidth = true
-	} else if cfg.fitTerm || cfg.tree.ExperimentalRender {
-		cfg.tree.FitTermWidth = true
 	}
 	if cfg.inspectAllFDs {
 		cfg.tree.PCfg.FDs = true
