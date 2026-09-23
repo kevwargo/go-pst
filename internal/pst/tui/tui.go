@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -79,11 +78,11 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("K", "Toggle last key", t.toggleLastKey).
 		NewGroup().
 		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
-		AddCmd("r", "Reload whole tree", t.reload("keyboard")).
+		AddCmd("r", "Refresh tree", t.refreshManual).
 		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
 		AddCmd("ctrl+c", "Close program", t.closeWatcher, "q", "esc")
 
-	return t.recvMsg
+	return tea.Batch(t.recvMsg, tickRefresh())
 }
 
 func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -99,8 +98,8 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.handleWinSize(msg)
 	case procwatch.Message:
 		cmd = t.handleProcMsg(msg)
-	case reloadSuccessMsg:
-		// nothing, just some non-nil message to trigger Update()->View()->render cycle
+	case refreshMsg:
+		cmd = t.handleRefresh(msg)
 	}
 
 	return t, cmd
@@ -133,22 +132,8 @@ func (t *tui) View() (v tea.View) {
 }
 
 func (t *tui) recvMsg() tea.Msg {
-	msg := t.watcher.Recv(2 * time.Second)
-	if !t.cfg.DebugRecv {
-		return msg
-	}
-
-	debug := time.Since(t.lastRecv) > time.Millisecond*250
-
-	if msg.Timeout {
-		t.recvTimeoutCount++
-	} else {
-		t.recvCount++
-		if debug {
-			t.lastRecv = time.Now()
-			log.Printf("debugmsg: %+v", msg)
-		}
-	}
+	msg := t.watcher.Recv()
+	t.lastRecv = time.Now()
 
 	return msg
 }
@@ -156,10 +141,6 @@ func (t *tui) recvMsg() tea.Msg {
 func (t *tui) handleProcMsg(msg procwatch.Message) tea.Cmd {
 	if msg.EOF || msg.Err != nil {
 		return t.handleQuitMsg(msg.Err)
-	}
-
-	if msg.Timeout {
-		return tea.Sequence(t.reload("timer"), t.recvMsg)
 	}
 
 	switch ev := msg.Event.(type) {
@@ -238,22 +219,6 @@ func (t *tui) pagerHome() {
 func (t *tui) pagerEnd() {
 	t.pst.GetPager().FullRight()
 }
-
-func (t *tui) reload(cause string) tea.Cmd {
-	return func() tea.Msg {
-		log.Printf("running reload command due to %q", cause)
-
-		if err := t.pst.Reload(); err != nil {
-			t.err = err
-
-			return t.closeWatcher()
-		}
-
-		return reloadSuccessMsg{}
-	}
-}
-
-type reloadSuccessMsg struct{}
 
 func (t *tui) adjustWinSize() tea.Msg {
 	return tea.WindowSizeMsg{
