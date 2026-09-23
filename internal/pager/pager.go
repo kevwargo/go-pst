@@ -24,11 +24,13 @@ func (p *Pager) WriteLine(fixed, scrollable string) {
 
 func (p *Pager) SetMaxWidth(w int) {
 	p.maxWidth = w
+	p.incXPos(0) // normalize X offset
 	p.needsRefresh = true
 }
 
 func (p *Pager) SetMaxHeight(h int) {
 	p.maxHeight = h
+	p.incYPos(0) // normalize Y offset
 	p.needsRefresh = true
 }
 

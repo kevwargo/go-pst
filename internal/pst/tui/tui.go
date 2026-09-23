@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,7 +18,7 @@ import (
 
 type Config struct {
 	Fullscreen bool
-	DebugRecv  bool
+	Debug      bool
 }
 
 func Run(cfg *Config, pst *tree.Tree) error {
@@ -105,24 +106,42 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *tui) View() (v tea.View) {
-	buf := bytes.NewBufferString(t.pst.View())
+	var buf bytes.Buffer
 
 	if t.showHelp {
-		fmt.Fprint(buf, "\n", t.keymap.Help())
-		if t.showLastKey && t.lastKey != nil {
-			fmt.Fprintf(buf, "\nLast key: %q", t.lastKey.String())
-			buf.WriteString(ansi.Style{}.ForegroundColor(ansi.Green).String())
-			json.NewEncoder(buf).Encode(t.lastKey.Key())
-			buf.WriteString(ansi.ResetStyle)
+		fmt.Fprint(&buf, t.keymap.Help())
+	}
+	if t.showLastKey && t.lastKey != nil {
+		fmt.Fprintf(&buf, "\nLast key: %q", t.lastKey.String())
+		buf.WriteString(styleLastKey.String())
+		json.NewEncoder(&buf).Encode(t.lastKey.Key())
+		buf.WriteString(ansi.ResetStyle)
+	}
+	if t.cfg.Debug {
+		fmt.Fprintf(&buf, "\nsize:%dx%d recv:%d timer:%d",
+			t.width, t.height, t.recvCount, t.timerCount,
+		)
+	}
+
+	content := strings.Trim(buf.String(), "\n")
+
+	lines := bytes.Count(buf.Bytes(), []byte{'\n'}) + 1
+	if lines < t.height {
+		t.pst.GetPager().SetMaxHeight(t.height - lines)
+		t.pst.GetPager().SetMaxWidth(t.width)
+		if content != "" {
+			content = t.pst.View() + "\n" + content
+		} else {
+			content = t.pst.View()
 		}
 	}
-	buf.WriteByte('\n')
 
-	if t.cfg.DebugRecv {
-		fmt.Fprintf(buf, "recv:%d timer:%d\n", t.recvCount, t.timerCount)
+	content = strings.Trim(content, "\n")
+	if t.quitting {
+		content += "\n"
 	}
 
-	v.SetContent(buf.String())
+	v.SetContent(content)
 
 	v.Cursor = &tea.Cursor{Shape: tea.CursorBlock}
 	v.AltScreen = t.cfg.Fullscreen
@@ -235,6 +254,6 @@ func (t *tui) closeWatcher() tea.Msg {
 func (t *tui) handleWinSize(msg tea.WindowSizeMsg) {
 	t.width = msg.Width
 	t.height = msg.Height
-	t.pst.GetPager().SetMaxWidth(msg.Width - 1)
-	t.pst.GetPager().SetMaxHeight(msg.Height - 1)
 }
+
+var styleLastKey = ansi.Style{}.ForegroundColor(ansi.Green)

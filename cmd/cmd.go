@@ -47,7 +47,7 @@ func Execute() error {
 
 	fs.BoolVarP(&cfg.interactive, "interactive", "i", false, "")
 	fs.BoolVarP(&cfg.tui.Fullscreen, "fullscreen", "A", false, "")
-	fs.BoolVar(&cfg.tui.DebugRecv, "debug-recv", false, "")
+	fs.BoolVar(&cfg.tui.Debug, "debug", false, "")
 
 	// TODO: use different variable maybe
 	fs.BoolVar(&cfg.inspectAllFDs, "inspect-all-fds", false, "")
