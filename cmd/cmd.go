@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"charm.land/lipgloss/v2"
 	"github.com/kevwargo/go-pst/internal/benchmark"
 	"github.com/kevwargo/go-pst/internal/logging"
 	"github.com/kevwargo/go-pst/internal/pst/tree"
@@ -110,7 +111,7 @@ func execute(cfg *config, args []string) error {
 		err = tui.Run(&cfg.tui, pst)
 	} else {
 		if view := pst.View(); view != "" {
-			_, err = fmt.Println(view)
+			lipgloss.Println(view)
 		}
 	}
 
