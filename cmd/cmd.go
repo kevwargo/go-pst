@@ -38,6 +38,12 @@ func Execute() error {
 	fs.BoolVarP(&cfg.tree.ShowDead, "show-dead", "D", false, "")
 	fs.BoolVarP(&cfg.tree.IgnoreCase, "ignore-case", "I", false, "")
 	fs.BoolVarP(&cfg.tree.ExperimentalRender, "experimental-render", "X", false, "")
+	fs.BoolVar(
+		&cfg.tree.PCfg.EphemeralStats,
+		"ephemeral",
+		false,
+		"Show threads/fds even for processes not matched directly",
+	)
 
 	fs.BoolVarP(&cfg.interactive, "interactive", "i", false, "")
 	fs.BoolVarP(&cfg.tui.Fullscreen, "fullscreen", "A", false, "")
@@ -49,7 +55,12 @@ func Execute() error {
 
 	fs.BoolVar(&cfg.showBenchmarks, "benchmarks", false, "")
 
-	fs.StringSliceVar(&cfg.tree.PCfg.DebugCmdline, "debug-cmd", nil, "Comma separated cmdline to debug")
+	fs.StringSliceVar(
+		&cfg.tree.PCfg.DebugCmdline,
+		"debug-cmdline",
+		nil,
+		"Log debug information about processes matching this cmdline pattern (as comma-separated list)",
+	)
 
 	return cmd.Execute()
 }

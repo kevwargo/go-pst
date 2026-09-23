@@ -27,6 +27,11 @@ func (t *Tree) Filter(pattern string) error {
 	return nil
 }
 
+func (t *Tree) refreshMatches() {
+	t.filter.refresh(t.top)
+	t.refreshView()
+}
+
 type filter struct {
 	tree     *Tree
 	pattern  string
@@ -34,19 +39,9 @@ type filter struct {
 	matchMap map[int]*match
 }
 
-type match struct {
-	pid     bool
-	regions []region
-}
-
-type region struct {
-	from int
-	to   int
-}
-
 func (f *filter) matches(pid int) *match {
 	if f == nil {
-		return &defaultMatch
+		return &ephemeralMatch
 	}
 
 	return f.matchMap[pid]
@@ -75,7 +70,7 @@ func (f *filter) apply(p *process) *match {
 		})
 	}
 
-	if !m.pid && len(m.regions) == 0 {
+	if m.isEphemeral() {
 		return nil
 	}
 
@@ -90,7 +85,7 @@ func (f *filter) matchProc(p *process) {
 		for _, c := range p.children {
 			f.matchProc(c)
 			if f.matchMap[c.id] != nil {
-				f.matchMap[p.id] = &defaultMatch
+				f.matchMap[p.id] = &ephemeralMatch
 			}
 		}
 	}
@@ -104,7 +99,7 @@ func (f *filter) matchAllDescendants(children []*process) {
 
 		m := f.apply(c)
 		if m == nil {
-			m = &defaultMatch
+			m = &ephemeralMatch
 		}
 
 		f.matchMap[c.id] = m
@@ -112,9 +107,18 @@ func (f *filter) matchAllDescendants(children []*process) {
 	}
 }
 
-func (t *Tree) refreshMatches() {
-	t.filter.refresh(t.top)
-	t.refreshView()
+type match struct {
+	pid     bool
+	regions []region
 }
 
-var defaultMatch match
+func (m match) isEphemeral() bool {
+	return !m.pid && len(m.regions) == 0
+}
+
+type region struct {
+	from int
+	to   int
+}
+
+var ephemeralMatch match

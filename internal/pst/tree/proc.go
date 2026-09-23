@@ -15,13 +15,14 @@ import (
 )
 
 type ProcConfig struct {
-	Workdir      bool
-	UGID         bool
-	NamespacePID bool
-	Threads      bool
-	FDs          bool
-	PathEnv      bool
-	MemoryUsage  bool
+	Workdir        bool
+	UGID           bool
+	NamespacePID   bool
+	Threads        bool
+	FDs            bool
+	PathEnv        bool
+	MemoryUsage    bool
+	EphemeralStats bool
 
 	DebugCmdline []string
 }

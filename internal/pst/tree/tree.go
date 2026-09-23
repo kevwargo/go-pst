@@ -305,12 +305,7 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 		fmt.Sprintf("%s%s%s%s%s", mem, pathEnv, ugid, workdir, p.attrs.cmdline(m)),
 	)
 	t.renderThreads(p, indent)
-
-	if t.cfg.PCfg.FDs {
-		for _, fd := range p.fds {
-			pg.WriteLine(fmt.Sprintf("%s %d -> ", indent, fd.num), fd.link)
-		}
-	}
+	t.renderFDs(p, indent)
 
 	for _, c := range p.children {
 		t.renderProcess(c, pg, level+1)
@@ -318,7 +313,7 @@ func (t *Tree) renderProcess(p *process, pg *pager.Pager, level int) {
 }
 
 func (t *Tree) renderThreads(p *process, indent string) {
-	if !t.cfg.PCfg.Threads {
+	if !t.cfg.PCfg.Threads || t.filter.matches(p.id).isEphemeral() && !t.cfg.PCfg.EphemeralStats {
 		return
 	}
 
@@ -333,6 +328,16 @@ func (t *Tree) renderThreads(p *process, indent string) {
 		}
 
 		t.GetPager().WriteLine(fmt.Sprintf("%s {%d%s} ", indent, thr.id, dead), thr.name)
+	}
+}
+
+func (t *Tree) renderFDs(p *process, indent string) {
+	if !t.cfg.PCfg.FDs || t.filter.matches(p.id).isEphemeral() && !t.cfg.PCfg.EphemeralStats {
+		return
+	}
+
+	for _, fd := range p.fds {
+		t.GetPager().WriteLine(fmt.Sprintf("%s %d -> ", indent, fd.num), fd.link)
 	}
 }
 
