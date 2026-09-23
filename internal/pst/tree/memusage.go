@@ -2,6 +2,7 @@ package tree
 
 import (
 	"fmt"
+	"io"
 )
 
 type memUsage struct {
@@ -22,6 +23,10 @@ func (m *memUsage) load(raw map[string]string) {
 
 func (m *memUsage) render() string {
 	return fmt.Sprintf("Mem:%s anon:%s file:%s swap:%s", m.VmRSS, m.RssAnon, m.RssFile, m.VmSwap)
+}
+
+func (m *memUsage) renderTo(w io.Writer) {
+	fmt.Fprintf(w, "Mem:%s anon:%s file:%s swap:%s", m.VmRSS, m.RssAnon, m.RssFile, m.VmSwap)
 }
 
 func normalizeSize(stringKB string) string {

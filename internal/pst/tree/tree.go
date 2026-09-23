@@ -215,6 +215,7 @@ func (t *Tree) refreshView() {
 		r := renderState{
 			matchProc: t.filter.matches,
 			pager:     t.GetPager(),
+			cfg:       t.cfg,
 		}
 		r.render(t.top)
 	} else {
