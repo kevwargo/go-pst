@@ -10,7 +10,6 @@ import (
 	bubblekey "charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/kevwargo/go-pst/internal/benchmark"
 )
 
@@ -87,7 +86,7 @@ func (km *Keymap) renderHelpColumns(ncol int) string {
 				bk = append(bk, styleKey.Render(k))
 			}
 			keys = append(keys, strings.Join(bk, "|"))
-			descs = append(descs, styleDescription.Styled(b.Help().Desc))
+			descs = append(descs, styleDescription.Render(b.Help().Desc))
 		}
 
 		columns = append(columns,
@@ -127,5 +126,5 @@ func (km *Keymap) addAction(key, description string, act *action, additionalKeys
 
 var (
 	styleKey         = lipgloss.NewStyle().Foreground(lipgloss.Color("#aa55ff")).Bold(true)
-	styleDescription = ansi.NewStyle(ansi.AttrBlueForegroundColor, ansi.AttrItalic)
+	styleDescription = lipgloss.NewStyle().Foreground(lipgloss.Color("#0090ff")).Italic(true)
 )
