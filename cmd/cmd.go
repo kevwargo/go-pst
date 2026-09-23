@@ -47,6 +47,7 @@ func Execute() error {
 
 	fs.BoolVarP(&cfg.interactive, "interactive", "i", false, "")
 	fs.BoolVarP(&cfg.tui.Fullscreen, "fullscreen", "A", false, "")
+	fs.BoolVar(&cfg.tui.DebugRecv, "debug-recv", false, "")
 	fs.BoolVarP(&cfg.fitTerm, "fit-terminal-width", "t", false, "")
 
 	// TODO: use different variable maybe

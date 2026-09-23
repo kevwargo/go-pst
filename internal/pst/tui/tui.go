@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,6 +18,7 @@ import (
 
 type Config struct {
 	Fullscreen bool
+	DebugRecv  bool
 }
 
 func Run(cfg *Config, pst *tree.Tree) error {
@@ -38,17 +40,23 @@ func Run(cfg *Config, pst *tree.Tree) error {
 }
 
 type tui struct {
-	cfg         *Config
-	pst         *tree.Tree
-	watcher     procwatch.Watcher
-	keymap      *keymap.Keymap
+	cfg     *Config
+	pst     *tree.Tree
+	watcher procwatch.Watcher
+	keymap  *keymap.Keymap
+
+	width       int
+	height      int
 	showHelp    bool
 	lastKey     tea.KeyMsg
 	showLastKey bool
-	width       int
-	height      int
-	err         error
-	quitting    bool
+
+	recvCount        int
+	recvTimeoutCount int
+	lastRecv         time.Time
+
+	err      error
+	quitting bool
 }
 
 func (t *tui) Init() tea.Cmd {
@@ -71,7 +79,7 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("K", "Toggle last key", t.toggleLastKey).
 		NewGroup().
 		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
-		AddCmd("r", "Reload whole tree", t.reload).
+		AddCmd("r", "Reload whole tree", t.reload("keyboard")).
 		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
 		AddCmd("ctrl+c", "Close program", t.closeWatcher, "q", "esc")
 
@@ -111,6 +119,11 @@ func (t *tui) View() (v tea.View) {
 		}
 	}
 	buf.WriteByte('\n')
+
+	if t.cfg.DebugRecv {
+		fmt.Fprintf(buf, "recv:%d timer:%d\n", t.recvCount, t.recvTimeoutCount)
+	}
+
 	v.SetContent(buf.String())
 
 	v.Cursor = &tea.Cursor{Shape: tea.CursorBlock}
@@ -120,7 +133,24 @@ func (t *tui) View() (v tea.View) {
 }
 
 func (t *tui) recvMsg() tea.Msg {
-	return t.watcher.Recv(2 * time.Second)
+	msg := t.watcher.Recv(2 * time.Second)
+	if !t.cfg.DebugRecv {
+		return msg
+	}
+
+	debug := time.Since(t.lastRecv) > time.Millisecond*250
+
+	if msg.Timeout {
+		t.recvTimeoutCount++
+	} else {
+		t.recvCount++
+		if debug {
+			t.lastRecv = time.Now()
+			log.Printf("debugmsg: %+v", msg)
+		}
+	}
+
+	return msg
 }
 
 func (t *tui) handleProcMsg(msg procwatch.Message) tea.Cmd {
@@ -129,7 +159,7 @@ func (t *tui) handleProcMsg(msg procwatch.Message) tea.Cmd {
 	}
 
 	if msg.Timeout {
-		return tea.Sequence(t.reload, t.recvMsg)
+		return tea.Sequence(t.reload("timer"), t.recvMsg)
 	}
 
 	switch ev := msg.Event.(type) {
@@ -209,14 +239,18 @@ func (t *tui) pagerEnd() {
 	t.pst.GetPager().FullRight()
 }
 
-func (t *tui) reload() tea.Msg {
-	if err := t.pst.Reload(); err != nil {
-		t.err = err
+func (t *tui) reload(cause string) tea.Cmd {
+	return func() tea.Msg {
+		log.Printf("running reload command due to %q", cause)
 
-		return t.closeWatcher()
+		if err := t.pst.Reload(); err != nil {
+			t.err = err
+
+			return t.closeWatcher()
+		}
+
+		return reloadSuccessMsg{}
 	}
-
-	return reloadSuccessMsg{}
 }
 
 type reloadSuccessMsg struct{}
