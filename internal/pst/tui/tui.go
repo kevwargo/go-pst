@@ -76,6 +76,7 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
 		AddFunc("f", "Toggle fullscreen", t.toggleFullscreen).
 		AddFunc("K", "Toggle last key", t.toggleLastKey).
+		AddFunc("g", "Toggle debug", t.toggleDebug).
 		NewGroup().
 		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
 		AddCmd("r", "Refresh tree", t.refreshManual).
@@ -204,6 +205,10 @@ func (t *tui) toggleFullscreen() {
 
 func (t *tui) toggleLastKey() {
 	t.showLastKey = !t.showLastKey
+}
+
+func (t *tui) toggleDebug() {
+	t.cfg.Debug = !t.cfg.Debug
 }
 
 func (t *tui) pagerUp() {
