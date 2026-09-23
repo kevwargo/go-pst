@@ -136,16 +136,23 @@ func (p *Pager) refresh() {
 	p.buf.Reset()
 
 	lines := p.visibleLines()
-	for i, line := range lines {
-		textLine := line.clamp(p.xPos, p.maxWidth)
-		if i == len(lines)-1 {
-			fmt.Fprint(&p.buf, textLine)
-		} else {
-			fmt.Fprintln(&p.buf, textLine)
+	if ll := len(lines); ll > 0 {
+		for _, l := range lines[:ll-1] {
+			p.renderLine(l, false)
 		}
+		p.renderLine(lines[ll-1], true)
 	}
 
 	p.needsRefresh = false
+}
+
+func (p *Pager) renderLine(l line, isLast bool) {
+	textLine := l.clamp(p.xPos, p.maxWidth)
+	if isLast {
+		fmt.Fprint(&p.buf, textLine)
+	} else {
+		fmt.Fprintln(&p.buf, textLine)
+	}
 }
 
 func (p *Pager) visibleLines() []line {

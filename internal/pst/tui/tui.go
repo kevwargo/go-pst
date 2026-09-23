@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -44,6 +43,7 @@ type tui struct {
 	pst     *tree.Tree
 	watcher procwatch.Watcher
 	keymap  *keymap.Keymap
+	viewBuf bytes.Buffer
 
 	width       int
 	height      int
@@ -106,44 +106,48 @@ func (t *tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return t, cmd
 }
 
-func (t *tui) View() (v tea.View) {
-	var buf bytes.Buffer
+func (t *tui) View() tea.View {
+	t.viewBuf.Reset()
 
 	if t.showHelp {
-		fmt.Fprint(&buf, t.keymap.Help())
+		fmt.Fprint(&t.viewBuf, t.keymap.Help())
 	}
 	if t.showLastKey && t.lastKey != nil {
-		fmt.Fprintf(&buf, "\nLast key: %q", t.lastKey.String())
-		buf.WriteString(styleLastKey.String())
-		json.NewEncoder(&buf).Encode(t.lastKey.Key())
-		buf.WriteString(ansi.ResetStyle)
+		if t.viewBuf.Len() > 0 {
+			t.viewBuf.WriteByte('\n')
+		}
+		lastKeyJSON, _ := json.Marshal(t.lastKey.Key())
+		fmt.Fprintf(&t.viewBuf, "Last key: %q%s",
+			t.lastKey.String(),
+			styleLastKey.Styled(string(lastKeyJSON)),
+		)
 	}
 	if t.cfg.Debug {
-		fmt.Fprintf(&buf, "\nsize:%dx%d recv:%d timer:%d",
+		if t.viewBuf.Len() > 0 {
+			t.viewBuf.WriteByte('\n')
+		}
+		fmt.Fprintf(&t.viewBuf, "size:%dx%d recv:%d timer:%d",
 			t.width, t.height, t.recvCount, t.timerCount,
 		)
 	}
 
-	content := strings.Trim(buf.String(), "\n")
-
-	lines := bytes.Count(buf.Bytes(), []byte{'\n'}) + 1
-	if lines < t.height {
-		t.pst.GetPager().SetMaxHeight(t.height - lines)
-		t.pst.GetPager().SetMaxWidth(t.width)
-		if content != "" {
-			content = t.pst.View() + "\n" + content
-		} else {
-			content = t.pst.View()
+	if t.viewBuf.Len() > 0 {
+		if ln := bytes.Count(t.viewBuf.Bytes(), []byte{'\n'}) + 1; ln < t.height {
+			t.pst.GetPager().SetMaxWidth(t.width)
+			t.pst.GetPager().SetMaxHeight(t.height - ln)
+			aux := t.viewBuf.String()
+			t.viewBuf.Reset()
+			fmt.Fprintf(&t.viewBuf, "%s\n%s", t.pst.View(), aux)
 		}
+	} else {
+		t.viewBuf.WriteString(t.pst.View())
 	}
 
-	content = strings.Trim(content, "\n")
-	if t.quitting {
-		content += "\n"
+	if t.viewBuf.Len() > 0 && t.quitting {
+		t.viewBuf.WriteByte('\n')
 	}
 
-	v.SetContent(content)
-
+	v := tea.NewView(t.viewBuf.String())
 	v.Cursor = &tea.Cursor{Shape: tea.CursorBlock}
 	v.AltScreen = t.cfg.Fullscreen
 
