@@ -68,16 +68,14 @@ func (t *tui) Init() tea.Cmd {
 		AddFunc("right", "Right 5 chars", t.pagerRight(5)).
 		AddFunc(",", "Left 1 char", t.pagerLeft(1)).
 		AddFunc(".", "Right 1 char", t.pagerRight(1)).
-		AddFunc("home", "Scroll home", t.pagerHome).
-		AddFunc("end", "Scroll to end", t.pagerEnd).
-		NewGroup().
+		AddFunc("home", "Scroll max left", t.pagerHome, "<").
+		AddFunc("end", "Scroll max right", t.pagerEnd, ">").
 		AddFunc("?", "Toggle help", t.toggleHelp, "h").
 		AddFunc("d", "Toggle show-dead", t.pst.ToggleShowDead).
 		AddFunc("t", "Toggle threads", t.pst.ToggleThreads).
 		AddFunc("f", "Toggle fullscreen", t.toggleFullscreen).
 		AddFunc("K", "Toggle last key", t.toggleLastKey).
 		AddFunc("g", "Toggle debug", t.toggleDebug).
-		NewGroup().
 		AddCmd("w", "Force adjust to window size", t.adjustWinSize).
 		AddCmd("r", "Refresh tree", t.refreshManual).
 		AddFunc("D", "Cleanup dead", t.pst.CleanupDead).
@@ -110,7 +108,7 @@ func (t *tui) View() tea.View {
 	t.viewBuf.Reset()
 
 	if t.showHelp {
-		fmt.Fprint(&t.viewBuf, t.keymap.Help())
+		fmt.Fprint(&t.viewBuf, t.keymap.Help(t.width))
 	}
 	if t.showLastKey && t.lastKey != nil {
 		if t.viewBuf.Len() > 0 {

@@ -1,20 +1,27 @@
 package keymap
 
 import (
-	"encoding/json"
+	"fmt"
+	"math"
+	"slices"
 	"strings"
+	"time"
 
-	"charm.land/bubbles/v2/help"
 	bubblekey "charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kevwargo/go-pst/internal/benchmark"
 )
 
 type Keymap struct {
-	layout   [][]bubblekey.Binding
-	bindings map[string]*action
-	newGroup bool
+	bindings []bubblekey.Binding
+	m        map[string]*action
+}
+
+type action struct {
+	cmd tea.Cmd
+	fn  func()
 }
 
 func New() *Keymap {
@@ -37,13 +44,8 @@ func (km *Keymap) AddFunc(key, description string, fn func(), additionalKeys ...
 	return km
 }
 
-func (km *Keymap) NewGroup() *Keymap {
-	km.newGroup = true
-	return km
-}
-
 func (km *Keymap) HandleKey(key tea.KeyMsg) tea.Cmd {
-	if act := km.bindings[key.String()]; act != nil {
+	if act := km.m[key.String()]; act != nil {
 		switch {
 		case act.cmd != nil:
 			return act.cmd
@@ -55,60 +57,75 @@ func (km *Keymap) HandleKey(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+func (km *Keymap) Help(maxWidth int) string {
+	defer benchmark.Record("keymap", time.Now())
+
+	last := km.renderHelpColumns(1)
+
+	for ncol := 2; ncol <= len(km.bindings); ncol++ {
+		columns := km.renderHelpColumns(ncol)
+		if lipgloss.Width(columns) > maxWidth {
+			break
+		}
+
+		last = columns
+	}
+
+	return last
+}
+
+func (km *Keymap) renderHelpColumns(ncol int) string {
+	var columns []string
+	n := math.Floor(float64(len(km.bindings)) / float64(ncol))
+
+	for chunk := range slices.Chunk(km.bindings, int(n)) {
+		var keys, descs []string
+
+		for _, b := range chunk {
+			var bk []string
+			for _, k := range b.Keys() {
+				bk = append(bk, styleKey.Render(k))
+			}
+			keys = append(keys, strings.Join(bk, "|"))
+			descs = append(descs, styleDescription.Styled(b.Help().Desc))
+		}
+
+		columns = append(columns,
+			lipgloss.JoinHorizontal(lipgloss.Top,
+				strings.Join(keys, "\n"),
+				" ",
+				strings.Join(descs, "\n"),
+			),
+			"  ",
+		)
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, columns...)
+}
+
 func (km *Keymap) addAction(key, description string, act *action, additionalKeys ...string) {
-	if km.bindings == nil {
-		km.bindings = make(map[string]*action)
+	defer benchmark.Record("keymap", time.Now())
+
+	if km.m == nil {
+		km.m = make(map[string]*action)
 	}
 
 	keys := append([]string{key}, additionalKeys...)
 	for _, k := range keys {
-		km.bindings[k] = act
-	}
-
-	keysJSON, _ := json.Marshal(keys)
-	binding := bubblekey.NewBinding(
-		bubblekey.WithKeys(keys...),
-		bubblekey.WithHelp(string(keysJSON), description),
-	)
-
-	if km.newGroup || len(km.layout) == 0 {
-		km.layout = append(km.layout, []bubblekey.Binding{binding})
-		km.newGroup = false
-	} else {
-		km.layout[len(km.layout)-1] = append(km.layout[len(km.layout)-1], binding)
-	}
-}
-
-func (km *Keymap) Help() string {
-	h := help.New()
-	h.Styles.FullKey = lipgloss.NewStyle().Transform(transformKey)
-	h.Styles.FullDesc = h.Styles.FullDesc.Foreground(ansi.BrightBlue).Bold(true)
-
-	return h.FullHelpView(km.layout)
-}
-
-func transformKey(src string) string {
-	var lines []string
-
-	for _, line := range strings.Split(src, "\n") {
-		var keys []string
-		if err := json.Unmarshal([]byte(line), &keys); err != nil {
-			lines = append(lines, line)
-		} else {
-			for i := range keys {
-				keys[i] = keyHelpStyle.Render(keys[i])
-			}
-
-			lines = append(lines, strings.Join(keys, "|"))
+		if _, ok := km.m[k]; ok {
+			panic(fmt.Sprintf("duplicate key %q", k))
 		}
+
+		km.m[k] = act
 	}
 
-	return strings.Join(lines, "\n")
+	km.bindings = append(km.bindings, bubblekey.NewBinding(
+		bubblekey.WithKeys(keys...),
+		bubblekey.WithHelp("" /*unused*/, description),
+	))
 }
 
-type action struct {
-	cmd tea.Cmd
-	fn  func()
-}
-
-var keyHelpStyle = lipgloss.NewStyle().Foreground(ansi.BrightGreen).Bold(true)
+var (
+	styleKey         = lipgloss.NewStyle().Foreground(lipgloss.Color("#aa55ff")).Bold(true)
+	styleDescription = ansi.NewStyle(ansi.AttrBlueForegroundColor, ansi.AttrItalic)
+)
