@@ -221,7 +221,7 @@ func (p *process) loadPathEnv() error {
 	}
 
 	visited := make(map[string]bool)
-	for _, e := range strings.Split(envs["PATH"], ":") {
+	for e := range strings.SplitSeq(envs["PATH"], ":") {
 		if !visited[e] {
 			p.attrs.pathEnvEntries = append(p.attrs.pathEnvEntries, e)
 			visited[e] = true
