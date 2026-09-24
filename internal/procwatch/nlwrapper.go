@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 	"time"
@@ -21,10 +22,23 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func newWatcher() (*watcher, error) {
-	sock, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM, unix.NETLINK_CONNECTOR)
+func openWatcher() (*watcher, error) {
+	w := watcher{
+		msgCh:  make(chan Message, chanSize),
+		doneCh: make(chan struct{}),
+	}
+
+	if err := w.openSocket(); err != nil {
+		return nil, err
+	}
+
+	return &w, nil
+}
+
+func (w *watcher) openSocket() (err error) {
+	w.sock, err = unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM, unix.NETLINK_CONNECTOR)
 	if err != nil {
-		return nil, fmt.Errorf("creating netlink socket: %w", err)
+		return fmt.Errorf("creating netlink socket: %w", err)
 	}
 
 	addr := unix.SockaddrNetlink{
@@ -32,22 +46,18 @@ func newWatcher() (*watcher, error) {
 		Pid:    uint32(os.Getpid()),
 		Groups: C.CN_IDX_PROC,
 	}
-	if err := unix.Bind(sock, &addr); err != nil {
-		if ce := unix.Close(sock); ce != nil {
+	if err := unix.Bind(w.sock, &addr); err != nil {
+		if ce := unix.Close(w.sock); ce != nil {
 			err = errors.Join(err, fmt.Errorf("closing netlink socket: %w", ce))
 		}
 
-		return nil, fmt.Errorf("binding netlink socket: %w", err)
+		return fmt.Errorf("binding netlink socket: %w", err)
 	}
 
-	return &watcher{
-		sock:   sock,
-		msgCh:  make(chan Message, chanSize),
-		doneCh: make(chan struct{}),
-	}, nil
+	return w.sendInit()
 }
 
-func (w *watcher) initListen() error {
+func (w *watcher) sendInit() error {
 	header := unix.NlMsghdr{
 		Type:  uint16(unix.NLMSG_DONE),
 		Flags: 0,
@@ -87,12 +97,24 @@ func (w *watcher) listen() error {
 	for {
 		n, from, err := unix.Recvfrom(w.sock, buf, 0)
 		if err != nil {
-			var errName string
-			if errno, ok := errors.AsType[syscall.Errno](err); ok {
-				errName = fmt.Sprintf(" (%s %d)", unix.ErrnoName(errno), errno)
+			err = fmt.Errorf("nl socket recv: %w", err)
+
+			if errors.Is(err, syscall.ENOBUFS) {
+				// try to re-open the socket
+				if ce := unix.Close(w.sock); ce != nil {
+					return errors.Join(err, ce)
+				}
+
+				if oe := w.openSocket(); oe != nil {
+					return errors.Join(err, oe)
+				}
+
+				log.Printf("re-opened socket after %q", err)
+
+				continue
 			}
 
-			return fmt.Errorf("receiving from nl socket: %w%s", err, errName)
+			return err
 		}
 
 		if err := w.processMessage(buf[:n], from); err != nil {

@@ -51,12 +51,8 @@ type Message struct {
 }
 
 func Watch() (Watcher, error) {
-	w, err := newWatcher()
+	w, err := openWatcher()
 	if err != nil {
-		return nil, err
-	}
-
-	if err = w.initListen(); err != nil {
 		return nil, err
 	}
 
