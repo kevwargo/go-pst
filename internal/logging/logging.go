@@ -12,27 +12,35 @@ func Init() {
 }
 
 func Redirect() func() {
-	cacheDir, err := os.UserCacheDir()
+	lf, err := openLogFile()
 	if err != nil {
-		log.Println(err.Error())
+		log.Println(err)
+
 		return func() {}
 	}
 
-	lf, err := os.OpenFile(filepath.Join(cacheDir, "pst.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
-	if err != nil {
-		log.Printf("opening log file: %s", err)
-		return func() {}
-	}
-
-	w := log.Writer()
+	wBak := log.Writer()
 	log.SetOutput(lf)
 	log.SetPrefix(fmt.Sprintf("[PID %d] ", os.Getpid()))
-
 	log.Printf("Started.")
 
 	return func() {
 		log.Printf("Closing...")
 		lf.Close()
-		log.SetOutput(w)
+		log.SetOutput(wBak)
 	}
+}
+
+func openLogFile() (*os.File, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolving user cache dir: %w", err)
+	}
+
+	lf, err := os.OpenFile(filepath.Join(cacheDir, "pst.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
+	if err != nil {
+		return nil, fmt.Errorf("opening log file: %w", err)
+	}
+
+	return lf, nil
 }

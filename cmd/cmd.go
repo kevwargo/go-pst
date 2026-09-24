@@ -20,8 +20,8 @@ func Execute() error {
 		SilenceUsage:  true,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if cfg.interactive {
-				revertLogging := logging.Redirect()
-				defer revertLogging()
+				restoreLog := logging.Redirect()
+				defer restoreLog()
 			}
 
 			return execute(&cfg, args)
