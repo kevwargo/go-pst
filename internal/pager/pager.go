@@ -136,18 +136,27 @@ func (p *Pager) refresh() {
 	p.buf.Reset()
 
 	lines := p.visibleLines()
+	r := p.scrollRange()
 	if ll := len(lines); ll > 0 {
 		for _, l := range lines[:ll-1] {
-			p.renderLine(l, false)
+			p.renderLine(l, false, r != nil)
 		}
-		p.renderLine(lines[ll-1], true)
+		p.renderLine(lines[ll-1], true, r != nil)
+		if r != nil {
+			p.renderScrollbar(*r)
+		}
 	}
 
 	p.needsRefresh = false
 }
 
-func (p *Pager) renderLine(l line, isLast bool) {
-	textLine := l.clamp(p.xPos, p.maxWidth)
+func (p *Pager) renderLine(l line, isLast, withScrollbar bool) {
+	maxWidth := p.maxWidth
+	if withScrollbar {
+		maxWidth -= 2
+	}
+
+	textLine := l.clamp(p.xPos, maxWidth)
 	if isLast {
 		fmt.Fprint(&p.buf, textLine)
 	} else {
@@ -156,8 +165,8 @@ func (p *Pager) renderLine(l line, isLast bool) {
 }
 
 func (p *Pager) visibleLines() []line {
-	if p.maxHeight > 0 && len(p.lines) > p.maxHeight {
-		return p.lines[p.yPos : p.yPos+p.maxHeight]
+	if r := p.scrollRange(); r != nil {
+		return p.lines[r.from:r.to]
 	}
 
 	return p.lines
