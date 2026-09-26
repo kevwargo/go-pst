@@ -199,17 +199,9 @@ func (t *Tree) CleanupDead() {
 func (t *Tree) refreshView() {
 	defer benchmark.Record("tree.refreshView", time.Now())
 
-	pg := t.GetPager()
-	pg.Reset()
-
 	t.sort(t.top)
-
-	r := renderState{
-		matchProc: t.filter.matches,
-		pager:     t.GetPager(),
-		cfg:       t.cfg,
-	}
-	r.render(t.top)
+	t.GetPager().Reset()
+	newRenderState(t).render(t.top)
 }
 
 func (t *Tree) sort(ps []*process) int {

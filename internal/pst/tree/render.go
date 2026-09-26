@@ -17,6 +17,14 @@ type renderState struct {
 	levels    []nestLevel
 }
 
+func newRenderState(t *Tree) *renderState {
+	return &renderState{
+		matchProc: t.filter.matches,
+		pager:     t.GetPager(),
+		cfg:       t.cfg,
+	}
+}
+
 type nestLevel struct {
 	isLastSibling bool
 }
