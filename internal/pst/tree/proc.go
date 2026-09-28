@@ -136,7 +136,18 @@ func (a *attrs) cmdline(m *match) string {
 	)
 	for _, r := range m.regions {
 		buf.WriteString(cmdline[lastPos:r.from])
-		buf.WriteString(matchStyle.Styled(cmdline[r.from:r.to]))
+		if r.to > len(cmdline) {
+			log.Printf("WOULD PANIC (%d > %d)\ncmdline:%q(%d)\nproc_attrs:%+v\nmatch: %+v",
+				r.to,
+				len(cmdline),
+				cmdline,
+				len(cmdline),
+				a,
+				m,
+			)
+		} else {
+			buf.WriteString(matchStyle.Styled(cmdline[r.from:r.to]))
+		}
 		lastPos = r.to
 	}
 	if lastPos < len(cmdline) {
