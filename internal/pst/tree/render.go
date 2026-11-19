@@ -75,7 +75,11 @@ func (r *renderState) buildFixed(p *process, isLast bool) string {
 	if r.matchProc(p.id).pid {
 		pid = matchStyle.Styled(pid)
 	}
-	fmt.Fprintf(&r.buf, "[%s]", pid)
+	var pureFork string
+	if p.pureFork {
+		pureFork = "~"
+	}
+	fmt.Fprintf(&r.buf, "[%s]%s", pid, pureFork)
 
 	if p.attrs.isZombie() {
 		r.buf.WriteRune('Z')
@@ -131,9 +135,20 @@ func (r *renderState) renderPathEnv(p *process) {
 }
 
 func (r *renderState) renderUGID(p *process) {
-	if r.cfg.PCfg.UGID {
-		fmt.Fprintf(&r.buf, "[%s:%s] ", p.attrs.uid.ID(), p.attrs.gid.ID())
+	if !r.cfg.PCfg.UGID {
+		return
 	}
+
+	uid := "<nil>"
+	if p.attrs.uid != nil {
+		uid = fmt.Sprint(p.attrs.uid.ID())
+	}
+	gid := "<nil>"
+	if p.attrs.gid != nil {
+		gid = fmt.Sprint(p.attrs.gid.ID())
+	}
+
+	fmt.Fprintf(&r.buf, "[%s:%s] ", uid, gid)
 }
 
 func (r *renderState) renderWorkdir(p *process) {

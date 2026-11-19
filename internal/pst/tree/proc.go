@@ -43,6 +43,8 @@ type process struct {
 	fds      []fileDes
 	exit     *exitStatus
 	children []*process
+
+	pureFork bool // a forked process for which no exec was registered
 }
 
 type fileDes struct {
@@ -111,6 +113,8 @@ func (p *process) fork(newPID int) *process {
 			args:    p.attrs.args,
 			workdir: p.attrs.workdir,
 		},
+
+		pureFork: true,
 	}
 
 	p.children = append(p.children, child)

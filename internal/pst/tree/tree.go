@@ -94,6 +94,7 @@ func (t *Tree) HandleNewThread(ev procwatch.EventForkThread) {
 
 func (t *Tree) HandleExec(ev procwatch.EventExec) {
 	if p := t.pMap[ev.PID]; p != nil {
+		p.pureFork = false
 		p.reload(&t.cfg.PCfg)
 		t.refreshMatches()
 	}
